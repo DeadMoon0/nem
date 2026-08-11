@@ -1,0 +1,56 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>disable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<PublishAot>False</PublishAot>
+		<InvariantGlobalization>true</InvariantGlobalization>
+		<!--<GenerateDocumentationFile>true</GenerateDocumentationFile>--><!--//TODO: Add this later-->
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<Title>nem</Title>
+		<PackageId>nem</PackageId>
+		<Authors>DeadMoon0</Authors>
+		<Product>nem</Product>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<PackageTags>Node, NPM, Package, Package Manager</PackageTags>
+		<Description>Local Node.js environment manager for projects</Description>
+		<Version>0.0.2</Version>
+		<PackageProjectUrl>https://github.com/DeadMoon0/nem</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/DeadMoon0/nem.git</RepositoryUrl>
+		<RepositoryType>git</RepositoryType>
+		<Copyright>Copyright (c) DeadMoon0 2026</Copyright>
+		<PackageReleaseNotes>add version and try fix nuget</PackageReleaseNotes>
+		<PackAsTool>True</PackAsTool>
+		<ToolCommandName>nem</ToolCommandName>
+		<!--<SelfContained>true</SelfContained>
+		<PublishSingleFile>true</PublishSingleFile>-->
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+	  <TreatWarningsAsErrors>True</TreatWarningsAsErrors>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+	  <TreatWarningsAsErrors>True</TreatWarningsAsErrors>
+	</PropertyGroup>
+
+	<ItemGroup>
+	  <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+	  <PackageReference Include="Spectre.Console" Version="0.57.2" />
+	  <PackageReference Include="Spectre.Console.Cli" Version="0.55.0" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <ProjectReference Include="..\nem.Common\nem.Common.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <None Update="README.md">
+	    <Pack>True</Pack>
+	    <PackagePath>\</PackagePath>
+	  </None>
+	</ItemGroup>
+
+</Project>
