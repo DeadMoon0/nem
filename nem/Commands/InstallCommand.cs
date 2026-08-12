@@ -1,7 +1,12 @@
-﻿using Spectre.Console.Cli;
-using System;
+﻿using nem.Common;
+using nem.Common.Models;
+using nem.Services;
+using Newtonsoft.Json;
+using Spectre.Console.Cli;
 using System.ComponentModel;
+using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace nem.Commands;
 
@@ -13,10 +18,13 @@ internal class InstallCommandSettings : CommandSettings
     public required string Path { get; init; }
 }
 
-internal class InstallCommand : Command<InstallCommandSettings>
+internal class InstallCommand : AsyncCommand<InstallCommandSettings>
 {
-    protected override int Execute(CommandContext context, InstallCommandSettings settings, CancellationToken cancellationToken)
+    protected override async Task<int> ExecuteAsync(CommandContext context, InstallCommandSettings settings, CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        IOService.EnsureSystemDir();
+        NemConfig config = JsonConvert.DeserializeObject<NemConfig>(File.ReadAllText(IOPathManager.Local(Path.GetFullPath(settings.Path)).ConfigFilePath))!;
+        await NodeDownloadingService.DownloadNodeVersion(config.NodeVersion, IOPathManager.Local(Path.GetFullPath(settings.Path)).EnvDir.NodeDirPath, true);
+        return 0;
     }
 }

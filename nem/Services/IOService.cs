@@ -3,7 +3,6 @@ using nem.Common.Models;
 using Newtonsoft.Json;
 using Spectre.Console;
 using System.IO;
-using System.Threading.Tasks;
 
 namespace nem.Services;
 
@@ -11,12 +10,24 @@ public static class IOService
 {
     public static void InitEnv(string path, string version)
     {
-        string configPath = Path.Combine(path, IOPathManager.CONFIG_FILE_NAME);
-        if (File.Exists(configPath)) AnsiConsole.MarkupLine("[yellow]Skipped " + IOPathManager.CONFIG_FILE_NAME + "-File because it already exists.[/]");
-        else File.WriteAllText(configPath, JsonConvert.SerializeObject(new NemConfig { NodeVersion = version }));
-        
-        string envPath = Path.Combine(path, IOPathManager.ENV_FOLDER_NAME);
-        if (Directory.Exists(envPath)) AnsiConsole.MarkupLine("[yellow]Skipped " + IOPathManager.ENV_FOLDER_NAME + "-Folder because it already exists.[/]");
+        string configPath = IOPathManager.Local(path).ConfigFilePath;
+        if (File.Exists(configPath)) AnsiConsole.MarkupLine("[yellow]Skipped " + IOPathManager.Local(path).ConfigFileName + "-File because it already exists.[/]");
+        else File.WriteAllText(configPath, JsonConvert.SerializeObject(new NemConfig { NodeVersion = version }, Formatting.Indented));
+
+        string envPath = IOPathManager.Local(path).EnvDirPath;
+        if (Directory.Exists(envPath)) AnsiConsole.MarkupLine("[yellow]Skipped " + IOPathManager.Local(path).EnvDirName + "-Folder because it already exists.[/]");
         else Directory.CreateDirectory(envPath);
+
+        string gitIgnorePath = Path.Combine(path, ".gitignore");
+        if (!File.Exists(gitIgnorePath)) AnsiConsole.MarkupLine("[yellow]Skipped editing the .gitignore because it does not exists.[/]");
+        else if (File.ReadAllText(gitIgnorePath).Contains("/" + IOPathManager.Local(path).EnvDirName)) AnsiConsole.MarkupLine("[yellow]Skipped editing the .gitignore because it has already an entry for \"/" + IOPathManager.Local(path).EnvDirName + "\".[/]");
+        else File.AppendAllLines(gitIgnorePath, [(File.ReadAllText(gitIgnorePath).EndsWith('\n') ? "" : "\n"), "#nem", "/" + IOPathManager.Local(path).EnvDirName]);
+    }
+
+    public static void EnsureSystemDir()
+    {
+        if (!Directory.Exists(IOPathManager.System.DirPath)) Directory.CreateDirectory(IOPathManager.System.DirPath);
+        if (!Directory.Exists(IOPathManager.System.DownloadCacheDirPath)) Directory.CreateDirectory(IOPathManager.System.DownloadCacheDirPath);
+        if (!Directory.Exists(IOPathManager.System.ExtractCacheDirPath)) Directory.CreateDirectory(IOPathManager.System.ExtractCacheDirPath);
     }
 }

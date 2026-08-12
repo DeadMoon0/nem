@@ -2,7 +2,8 @@
   "profiles": {
     "nem": {
       "commandName": "Project",
-      "commandLineArgs": "init 0.0.0"
+      "commandLineArgs": "install",
+      "workingDirectory": "C:\\Users\\allin\\source\\repos\\NEMSampleAngular\\my-angular-app"
     }
   }
 }
