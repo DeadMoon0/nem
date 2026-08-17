@@ -2,6 +2,8 @@
 using nem.Common.Models;
 using Newtonsoft.Json;
 using Spectre.Console;
+using System;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 
 namespace nem.Services;
@@ -29,5 +31,31 @@ public static class IOService
         if (!Directory.Exists(IOPathManager.System.DirPath)) Directory.CreateDirectory(IOPathManager.System.DirPath);
         if (!Directory.Exists(IOPathManager.System.DownloadCacheDirPath)) Directory.CreateDirectory(IOPathManager.System.DownloadCacheDirPath);
         if (!Directory.Exists(IOPathManager.System.ExtractCacheDirPath)) Directory.CreateDirectory(IOPathManager.System.ExtractCacheDirPath);
+        if (!Directory.Exists(IOPathManager.System.ProxyDirPath)) Directory.CreateDirectory(IOPathManager.System.ProxyDirPath);
+
+        string currentPath = Environment.GetEnvironmentVariable("Path", EnvironmentVariableTarget.User) ?? "";
+        if (!currentPath.Contains(IOPathManager.System.ProxyDirPath))
+        {
+            string newPath = IOPathManager.System.ProxyDirPath + ";" + currentPath.TrimStart(';');
+            Environment.SetEnvironmentVariable("Path", newPath, EnvironmentVariableTarget.User);
+        }
+    }
+
+    public static bool TryGetContainingEnv(string searchDirPath, [NotNullWhen(true)] out string? foundPath)
+    {
+        var local = IOPathManager.Local(searchDirPath);
+
+        if (File.Exists(local.ConfigFilePath))
+        {
+            foundPath = local.ConfigFilePath;
+            return true;
+        }
+        string? parent = Path.GetDirectoryName(searchDirPath);
+        if (String.IsNullOrEmpty(parent))
+        {
+            foundPath = null;
+            return false;
+        }
+        return TryGetContainingEnv(parent, out foundPath);
     }
 }

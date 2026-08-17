@@ -16,6 +16,11 @@ internal class InstallCommandSettings : CommandSettings
     [DefaultValue(".")]
     [Description("The folder path to where the env is in.")]
     public required string Path { get; init; }
+    
+    [CommandOption("-c|--clean")]
+    [DefaultValue(false)]
+    [Description("If set, will clean before Installing.")]
+    public required bool Clean { get; init; }
 }
 
 internal class InstallCommand : AsyncCommand<InstallCommandSettings>
@@ -24,7 +29,13 @@ internal class InstallCommand : AsyncCommand<InstallCommandSettings>
     {
         IOService.EnsureSystemDir();
         NemConfig config = JsonConvert.DeserializeObject<NemConfig>(File.ReadAllText(IOPathManager.Local(Path.GetFullPath(settings.Path)).ConfigFilePath))!;
-        await NodeDownloadingService.DownloadNodeVersion(config.NodeVersion, IOPathManager.Local(Path.GetFullPath(settings.Path)).EnvDir.NodeDirPath, true);
+        await NodeDownloadingService.DownloadNodeVersion(config.NodeVersion, IOPathManager.Local(Path.GetFullPath(settings.Path)).EnsureEnvDirPath(), true);
+
+        foreach (var tool in config.Tools)
+        {
+
+        }
+
         return 0;
     }
 }

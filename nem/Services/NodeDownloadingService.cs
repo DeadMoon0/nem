@@ -44,7 +44,7 @@ public static class NodeDownloadingService
 
             AnsiConsole.MarkupLine("[Gray] Starting Extraction...[/]");
             string extractPathNode = Path.Combine(extractPath, $"node-v{version}-{osArchitecture}");
-            if (Directory.Exists(extractPathNode)) Directory.Delete(extractPathNode);
+            if (Directory.Exists(extractPathNode)) Directory.Delete(extractPathNode, true);
             Directory.CreateDirectory(extractPath);
             ZipFile.ExtractToDirectory(outputZipPath, extractPath);
             AnsiConsole.MarkupLine("[Gray] Extraction Successful![/]");

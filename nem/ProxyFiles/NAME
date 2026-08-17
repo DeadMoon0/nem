@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# Get the script name (tool name)
+TOOL=$(basename "$0")
+
+# Call nem run with the tool name and all arguments
+nem run "$TOOL" "$@"
+
+# Propagate exit code
+exit $?

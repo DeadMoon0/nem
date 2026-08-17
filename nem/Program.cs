@@ -22,6 +22,7 @@ internal class Program
 
             config.AddCommand<InitCommand>("init").WithDescription("Used to Init a new Env.");
             config.AddCommand<InstallCommand>("install").WithDescription("Used to Install every needed dependency to the .nem folder.");
+            config.AddCommand<RunCommand>("run").WithDescription("Used to run a registered tool.");
             config.AddBranch("tool", c =>
             {
                 c.SetDescription("Used to Managed needed Tools.");

@@ -16,13 +16,7 @@ public static class IOPathManager
 
         public string EnvDirName { get; } = ".nenv";
         public string EnvDirPath { get => Path.Combine(path, EnvDirName); }
-        public IOPathManagerLocalEnvDir EnvDir { get => new IOPathManagerLocalEnvDir(EnvDirPath); }
-
-        public class IOPathManagerLocalEnvDir(string envPath)
-        {
-            public string NodeDirName { get; } = "node";
-            public string NodeDirPath { get => Path.Combine(envPath, NodeDirName); }
-        }
+        public string EnsureEnvDirPath() { if (!Directory.Exists(EnvDirPath)) Directory.CreateDirectory(EnvDirPath); return EnvDirPath; }
     }
 
     public class IOPathManagerSystem
@@ -34,5 +28,7 @@ public static class IOPathManager
         public string DownloadCacheDirPath { get => Path.Combine(DirPath, DownloadCacheDirName); }
         public string ExtractCacheDirName { get; } = "extract";
         public string ExtractCacheDirPath { get => Path.Combine(DirPath, ExtractCacheDirName); }
+        public string ProxyDirName { get; } = "proxy";
+        public string ProxyDirPath { get => Path.Combine(DirPath, ProxyDirName); }
     }
 }
