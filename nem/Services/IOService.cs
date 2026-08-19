@@ -33,11 +33,11 @@ public static class IOService
         if (!Directory.Exists(IOPathManager.System.ExtractCacheDirPath)) Directory.CreateDirectory(IOPathManager.System.ExtractCacheDirPath);
         if (!Directory.Exists(IOPathManager.System.ProxyDirPath)) Directory.CreateDirectory(IOPathManager.System.ProxyDirPath);
 
-        string currentPath = Environment.GetEnvironmentVariable("Path", EnvironmentVariableTarget.User) ?? "";
+        string currentPath = Environment.GetEnvironmentVariable("Path", EnvironmentVariableTarget.Machine) ?? "";
         if (!currentPath.Contains(IOPathManager.System.ProxyDirPath))
         {
-            string newPath = IOPathManager.System.ProxyDirPath + ";" + currentPath.TrimStart(';');
-            Environment.SetEnvironmentVariable("Path", newPath, EnvironmentVariableTarget.User);
+            AnsiConsole.MarkupLine("[red]You need to run 'Setup' first.[/]");
+            Environment.Exit(1);
         }
     }
 

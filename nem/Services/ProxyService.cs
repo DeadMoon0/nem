@@ -26,19 +26,19 @@ public static class ProxyService
                 Directory.CreateDirectory(systemProxyDir);
 
             // Copy .bat proxy (Windows)
-            var batSource = Path.Combine(proxyFilesDir, toolName + ".bat");
+            var batSource = Path.Combine(proxyFilesDir, "NAME.bat");
             var batDest = Path.Combine(systemProxyDir, toolName + ".bat");
             if (File.Exists(batSource))
                 File.Copy(batSource, batDest, overwrite: true);
 
             // Copy .ps1 proxy (Windows PowerShell)
-            var ps1Source = Path.Combine(proxyFilesDir, toolName + ".ps1");
+            var ps1Source = Path.Combine(proxyFilesDir, "NAME.ps1");
             var ps1Dest = Path.Combine(systemProxyDir, toolName + ".ps1");
             if (File.Exists(ps1Source))
                 File.Copy(ps1Source, ps1Dest, overwrite: true);
 
             // Copy linux proxy
-            var linuxSource = Path.Combine(proxyFilesDir, toolName + ".linux");
+            var linuxSource = Path.Combine(proxyFilesDir, "NAME");
             var linuxDest = Path.Combine(systemProxyDir, toolName);
             if (File.Exists(linuxSource))
             {

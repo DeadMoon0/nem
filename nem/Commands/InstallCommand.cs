@@ -31,9 +31,11 @@ internal class InstallCommand : AsyncCommand<InstallCommandSettings>
         NemConfig config = JsonConvert.DeserializeObject<NemConfig>(File.ReadAllText(IOPathManager.Local(Path.GetFullPath(settings.Path)).ConfigFilePath))!;
         await NodeDownloadingService.DownloadNodeVersion(config.NodeVersion, IOPathManager.Local(Path.GetFullPath(settings.Path)).EnsureEnvDirPath(), true);
 
+        ProxyService.TryInstallTool("npm");
+        ProxyService.TryInstallTool("npx");
         foreach (var tool in config.Tools)
         {
-
+            ProxyService.TryInstallTool(tool.ToolName);
         }
 
         return 0;

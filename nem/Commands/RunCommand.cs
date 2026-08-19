@@ -1,6 +1,6 @@
 ﻿using nem.Services;
+using Spectre.Console;
 using Spectre.Console.Cli;
-using System;
 using System.ComponentModel;
 using System.Threading;
 using System.Threading.Tasks;
@@ -19,6 +19,7 @@ internal class RunCommand : AsyncCommand<RunCommandSettings>
     protected override async Task<int> ExecuteAsync(CommandContext context, RunCommandSettings settings, CancellationToken cancellationToken)
     {
         IOService.EnsureSystemDir();
+        AnsiConsole.WriteLine("Proxied");
         ProxyService.CallToolInEnvContext(settings.ToolName, context.Remaining.Raw);
         return 0;
     }
