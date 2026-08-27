@@ -1,0 +1,39 @@
+name: publish
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so the packed commit hash is complete
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # Guard against forgetting to bump <Version> before tagging.
+      - name: Verify tag matches package version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if ! grep -qF "<Version>${TAG_VERSION}</Version>" nem/nem.csproj; then
+            echo "::error::Tag '${GITHUB_REF_NAME}' does not match <Version> in nem/nem.csproj"
+            exit 1
+          fi
+
+      - name: Build
+        run: dotnet build -c Release
+
+      # Pack only the tool project; its project reference (nem.Common) is
+      # built and bundled into the package, not published as a dependency.
+      - name: Pack
+        run: dotnet pack nem/nem.csproj -c Release -o artifacts
+
+      - name: Publish to NuGet
+        run: dotnet nuget push artifacts/nem.*.nupkg --api-key "${{ secrets.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json
