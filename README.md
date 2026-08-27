@@ -35,10 +35,18 @@ nem setup
 
 ### Initialize a project
 ```bash
-$ nem init 18.12.0 [path]
-# Creates nem.json (NodeVersion + Tools) and an empty .nenv/ folder
-# in the current or the given folder
+$ nem init <nodeVersion> [path]
+# Validates the version against nodejs.org and creates nem.json
+# (NodeVersion + Tools) in the current or the given folder
 ```
+
+The version is validated before anything is written:
+
+- An exact version (`18.12.0`, also accepted with a leading `v`) must exist on
+  nodejs.org, otherwise init fails.
+- A partial version (`22` or `18.12`) resolves to the newest matching release
+  and the **resolved** version is what gets written to `nem.json`, e.g. `22`
+  → `22.23.2`.
 
 ### Manage tools (declarative)
 ```bash
