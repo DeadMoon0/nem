@@ -4,7 +4,7 @@
 TOOL=$(basename "$0")
 
 # Call nem run with the tool name and all arguments
-nem run "$TOOL" "$@"
+nem run "$TOOL" -- "$@"
 
 # Propagate exit code
 exit $?

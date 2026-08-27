@@ -1,6 +1,7 @@
-﻿using nem.Common;
+using nem.Common;
 using Spectre.Console;
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
@@ -11,75 +12,159 @@ namespace nem.Services;
 
 public static class NodeDownloadingService
 {
-    public static async Task DownloadNodeVersion(string version, string targetNodePath, bool cleanDownload)
+    /// <summary>
+    /// Downloads (or reuses a cached) Node.js version and copies it into the given env directory.
+    /// </summary>
+    public static async Task InstallNodeAsync(string version, string envDir, bool clean)
     {
-        string osArchitecture = GetOSArchitecture();
-        string outputZipPath = Path.Combine(IOPathManager.System.DownloadCacheDirPath, $"node-v{version}-{osArchitecture}.zip");
-        string extractPath = Path.Combine(IOPathManager.System.ExtractCacheDirPath);
+        if (string.IsNullOrWhiteSpace(version))
+            throw new ArgumentException("A node version is required.", nameof(version));
 
-        if (File.Exists(outputZipPath) && cleanDownload)
+        string tag = GetPlatformTag(version);
+        string fileName = $"{tag}.zip";
+        string url = $"https://nodejs.org/dist/v{version}/{fileName}";
+        string zipPath = Path.Combine(IOPathManager.System.DownloadCacheDirPath, fileName);
+        string extractDir = IOPathManager.System.ExtractCacheDirPath;
+        string extractedNode = Path.Combine(extractDir, tag);
+        string primaryBinary = PrimaryNodeBinary(envDir);
+
+        if (clean)
         {
-            File.Delete(outputZipPath);
+            DeleteIfExists(zipPath);
+            DeleteDirectoryIfExists(extractedNode);
+            WipeDirectory(envDir);
+            AnsiConsole.MarkupLine("[gray]Cleaned previous install.[/]");
         }
-        else if (File.Exists(outputZipPath))
-        {
-            AnsiConsole.MarkupLine("[Gray]Download cache hit for this Version. Skipping the Download.");
-            return;
-        }
+
+        if (!File.Exists(zipPath))
+            await DownloadAsync(url, zipPath);
         else
-        {
-            AnsiConsole.MarkupLine("[Gray] Starting download for node version: " + version + " ...[/]");
-            string url = $"https://nodejs.org/dist/v{version}/node-v{version}-{osArchitecture}.zip";
+            AnsiConsole.MarkupLine($"[gray]Using cached {fileName}.[/]");
 
-            using HttpClient client = new HttpClient();
-            var response = await client.GetAsync(url);
+        if (!Directory.Exists(extractedNode))
+        {
+            AnsiConsole.MarkupLine("[gray]Starting extraction...[/]");
+            Directory.CreateDirectory(extractDir);
+            ZipFile.ExtractToDirectory(zipPath, extractDir, overwriteFiles: true);
+            AnsiConsole.MarkupLine("[gray]Extraction successful.[/]");
+        }
+
+        if (!File.Exists(primaryBinary))
+        {
+            AnsiConsole.MarkupLine("[gray]Starting to copy to .nenv dir...[/]");
+            CopyFilesRecursively(extractedNode, envDir);
+            AnsiConsole.MarkupLine("[green]Copy successful.[/]");
+        }
+        else if (!clean)
+        {
+            AnsiConsole.MarkupLine("[yellow]Node is already installed in the env, nothing to do.[/]");
+        }
+    }
+
+    static async Task DownloadAsync(string url, string destPath)
+    {
+        AnsiConsole.MarkupLine($"[gray]Starting download for node version from {url}...[/]");
+
+        var tmpPath = destPath + ".part";
+        using (var client = new HttpClient { Timeout = TimeSpan.FromMinutes(10) })
+        {
+            using var response = await client.GetAsync(url, System.Net.Http.HttpCompletionOption.ResponseHeadersRead);
             response.EnsureSuccessStatusCode();
+            long total = response.Content.Headers.ContentLength ?? 0;
 
-            await using var contentStream = await response.Content.ReadAsStreamAsync();
-            await using (var fileStream = new FileStream(outputZipPath, FileMode.Create))
+            var progress = AnsiConsole.Progress();
+
+            await progress.StartAsync(async ctx =>
             {
-                await contentStream.CopyToAsync(fileStream);
+                var task = ctx.AddTask("[green]Downloading[/]");
+                if (total > 0) task.MaxValue = total;
+
+                using var contentStream = await response.Content.ReadAsStreamAsync();
+                using var fileStream = File.Create(tmpPath);
+                var buffer = new byte[1 << 16];
+                long read = 0;
+                int bytesRead;
+                while ((bytesRead = await contentStream.ReadAsync(buffer)) > 0)
+                {
+                    await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead));
+                    read += bytesRead;
+                    task.Value = read;
+                    if (total > 0) task.Description = $"[green]Downloading[/] {read / 1024} / {total / 1024} KB";
+                    else task.Description = $"[green]Downloading[/] {read / 1024} KB";
+                }
+            });
+        }
+
+        File.Move(tmpPath, destPath, overwrite: true);
+        AnsiConsole.MarkupLine("[gray]Download successful![/]");
+    }
+
+    static string GetPlatformTag(string version)
+    {
+        if (!OperatingSystem.IsWindows())
+            throw new NotSupportedException("nem currently only supports downloading Node for Windows.");
+
+        if (RuntimeInformation.ProcessArchitecture == Architecture.Arm64)
+            throw new NotSupportedException("ARM64 Windows is not supported by nem yet.");
+
+        string arch = Environment.Is64BitProcess ? "x64" : "x86";
+        return $"node-v{version}-win-{arch}";
+    }
+
+    /// <summary>
+    /// node.exe (Windows) or bin/node (Unix) inside the env directory.
+    /// </summary>
+    public static string PrimaryNodeBinary(string envDir)
+    {
+        return OperatingSystem.IsWindows()
+            ? Path.Combine(envDir, "node.exe")
+            : Path.Combine(envDir, "bin", "node");
+    }
+
+    static void CopyFilesRecursively(string sourcePath, string targetPath)
+    {
+        foreach (string path in Directory.EnumerateFileSystemEntries(sourcePath, "*", SearchOption.AllDirectories))
+        {
+            string rel = Path.GetRelativePath(sourcePath, path);
+
+            // install_tools.bat is a legacy VS helper from the Node zip; not needed in the env.
+            if (rel.StartsWith("install_tools.bat", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            string dest = Path.Combine(targetPath, rel);
+            if (Directory.Exists(path))
+                Directory.CreateDirectory(dest);
+            else
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                File.Copy(path, dest, overwrite: true);
             }
-            AnsiConsole.MarkupLine("[Gray] Download Successful![/]");
-
-            AnsiConsole.MarkupLine("[Gray] Starting Extraction...[/]");
-            string extractPathNode = Path.Combine(extractPath, $"node-v{version}-{osArchitecture}");
-            if (Directory.Exists(extractPathNode)) Directory.Delete(extractPathNode, true);
-            Directory.CreateDirectory(extractPath);
-            ZipFile.ExtractToDirectory(outputZipPath, extractPath);
-            AnsiConsole.MarkupLine("[Gray] Extraction Successful![/]");
-
-            AnsiConsole.MarkupLine("[Gray] Starting to copy to .nenv dir...[/]");
-            CopyFilesRecursively(extractPathNode, targetNodePath);
-            AnsiConsole.MarkupLine("[Gray] Copy Successful![/]");
         }
     }
 
-    private static void CopyFilesRecursively(string sourcePath, string targetPath)
+    static void WipeDirectory(string dirPath)
     {
-        //Now Create all of the directories
-        foreach (string dirPath in Directory.GetDirectories(sourcePath, "*", SearchOption.AllDirectories))
-        {
-            Directory.CreateDirectory(dirPath.Replace(sourcePath, targetPath));
-        }
+        if (!Directory.Exists(dirPath))
+            return;
 
-        //Copy all the files & Replaces any files with the same name
-        foreach (string newPath in Directory.GetFiles(sourcePath, "*", SearchOption.AllDirectories))
+        foreach (string entry in Directory.EnumerateFileSystemEntries(dirPath))
         {
-            File.Copy(newPath, newPath.Replace(sourcePath, targetPath), true);
+            if (Directory.Exists(entry))
+                Directory.Delete(entry, recursive: true);
+            else
+                File.Delete(entry);
         }
     }
 
-    private static string GetOSArchitecture()
+    static void DeleteIfExists(string filePath)
     {
-        // Determine OS and architecture
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            return Environment.Is64BitProcess ? "win-x64" : "win-x86";
-        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-            return Environment.Is64BitProcess ? "linux-x64" : "linux-x86";
-        else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-            return "darwin-x64";
-        else
-            throw new PlatformNotSupportedException();
+        if (File.Exists(filePath))
+            File.Delete(filePath);
+    }
+
+    static void DeleteDirectoryIfExists(string dirPath)
+    {
+        if (Directory.Exists(dirPath))
+            Directory.Delete(dirPath, recursive: true);
     }
 }

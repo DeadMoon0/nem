@@ -16,14 +16,17 @@
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<PackageTags>Node, NPM, Package, Package Manager</PackageTags>
 		<Description>Local Node.js environment manager for projects</Description>
-		<Version>0.0.2</Version>
+		<Version>1.0.0</Version>
 		<PackageProjectUrl>https://github.com/DeadMoon0/nem</PackageProjectUrl>
 		<RepositoryUrl>https://github.com/DeadMoon0/nem.git</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
 		<Copyright>Copyright (c) DeadMoon0 2026</Copyright>
-		<PackageReleaseNotes>add version and try fix nuget</PackageReleaseNotes>
+		<PackageReleaseNotes>Working run/tool install, packaging fixes.</PackageReleaseNotes>
 		<PackAsTool>True</PackAsTool>
 		<ToolCommandName>nem</ToolCommandName>
+		<!-- The proxy templates (NAME.bat/NAME.ps1/NAME) ship under tools/ on purpose; -->
+		<!-- they are data for nem, not NuGet install scripts, so NU5111 is expected. -->
+		<NoWarn>$(NoWarn);NU5111</NoWarn>
 		<!--<SelfContained>true</SelfContained>
 		<PublishSingleFile>true</PublishSingleFile>-->
 	</PropertyGroup>

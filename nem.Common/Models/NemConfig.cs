@@ -1,7 +1,7 @@
-﻿namespace nem.Common.Models;
+namespace nem.Common.Models;
 
-public record NemConfig
+public class NemConfig
 {
-    public required string NodeVersion { get; set; }
+    public string? NodeVersion { get; set; }
     public List<NemToolConfig> Tools { get; set; } = [];
 }

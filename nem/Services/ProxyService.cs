@@ -1,5 +1,4 @@
-﻿using nem.Common;
-using nem.Common.Models;
+using nem.Common;
 using Spectre.Console;
 using System;
 using System.Collections.Generic;
@@ -12,45 +11,32 @@ namespace nem.Services;
 
 public static class ProxyService
 {
+    /// <summary>
+    /// Copies the proxy script templates (bat/ps1/sh) for the given tool name into the system proxy directory.
+    /// </summary>
     public static bool TryInstallTool(string toolName)
     {
         try
         {
-            var nemExePath = Assembly.GetExecutingAssembly().Location;
-            var nemDir = Path.GetDirectoryName(nemExePath)!;
+            var nemDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
             var proxyFilesDir = Path.Combine(nemDir, "ProxyFiles");
             var systemProxyDir = IOPathManager.System.ProxyDirPath;
 
-            // Ensure system proxy directory exists
             if (!Directory.Exists(systemProxyDir))
                 Directory.CreateDirectory(systemProxyDir);
 
-            // Copy .bat proxy (Windows)
-            var batSource = Path.Combine(proxyFilesDir, "NAME.bat");
-            var batDest = Path.Combine(systemProxyDir, toolName + ".bat");
-            if (File.Exists(batSource))
-                File.Copy(batSource, batDest, overwrite: true);
+            bool created = false;
+
+            // Copy .bat proxy (Windows cmd)
+            created |= TryCopyTemplate("NAME.bat", Path.Combine(systemProxyDir, toolName + ".bat"), proxyFilesDir, systemProxyDir);
 
             // Copy .ps1 proxy (Windows PowerShell)
-            var ps1Source = Path.Combine(proxyFilesDir, "NAME.ps1");
-            var ps1Dest = Path.Combine(systemProxyDir, toolName + ".ps1");
-            if (File.Exists(ps1Source))
-                File.Copy(ps1Source, ps1Dest, overwrite: true);
+            created |= TryCopyTemplate("NAME.ps1", Path.Combine(systemProxyDir, toolName + ".ps1"), proxyFilesDir, systemProxyDir);
 
-            // Copy linux proxy
-            var linuxSource = Path.Combine(proxyFilesDir, "NAME");
-            var linuxDest = Path.Combine(systemProxyDir, toolName);
-            if (File.Exists(linuxSource))
-            {
-                File.Copy(linuxSource, linuxDest, overwrite: true);
-                // Make executable on Unix
-                if (!OperatingSystem.IsWindows())
-                {
-                    RunCommand("chmod", $"+x \"{linuxDest}\"");
-                }
-            }
+            // Copy extensionless proxy (Unix / bash)
+            created |= TryCopyTemplate("NAME", Path.Combine(systemProxyDir, toolName), proxyFilesDir, systemProxyDir);
 
-            return true;
+            return created;
         }
         catch
         {
@@ -58,23 +44,40 @@ public static class ProxyService
         }
     }
 
-    public static void CallToolInEnvContext(string tool, IReadOnlyList<string> args)
+    static bool TryCopyTemplate(string templateName, string destPath, string proxyFilesDir, string systemProxyDir)
     {
-        bool foundEnv = IOService.TryGetContainingEnv(Directory.GetCurrentDirectory(), out var nemJsonPath);
+        var source = Path.Combine(proxyFilesDir, templateName);
+        if (!File.Exists(source))
+            return false;
 
+        File.Copy(source, destPath, overwrite: true);
+        if (!OperatingSystem.IsWindows())
+        {
+            // Best effort: make executable on Unix.
+            RunCapture("chmod", new[] { "+x", destPath });
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Finds the nem env that contains the current directory and runs the tool in its context.
+    /// Returns the tool's exit code.
+    /// </summary>
+    public static int CallToolInEnvContext(string tool, IReadOnlyList<string> args)
+    {
         string? envDir = null;
 
-        if (foundEnv && nemJsonPath != null)
+        if (IOService.TryGetContainingEnv(Directory.GetCurrentDirectory(), out var nemJsonPath))
         {
-            // Found nem.json — use managed environment
-            var configDir = Path.GetDirectoryName(nemJsonPath)!;
+            string configDir = Path.GetDirectoryName(nemJsonPath)!;
             envDir = IOPathManager.Local(configDir).EnvDirPath;
         }
 
-        ExecuteTool(tool, args, envDir);
+        return ExecuteTool(tool, args, envDir);
     }
 
-    private static void ExecuteTool(string toolName, IEnumerable<string> args, string? envDir)
+    static int ExecuteTool(string toolName, IEnumerable<string> args, string? envDir)
     {
         string? resolvedToolPath;
 
@@ -84,8 +87,8 @@ public static class ProxyService
             resolvedToolPath = ResolveToolInEnv(envDir, toolName);
             if (resolvedToolPath == null)
             {
-                AnsiConsole.MarkupLine($"[red]Error: Tool '{toolName}' not found in .nenv[/]");
-                Environment.Exit(1);
+                AnsiConsole.MarkupLine($"[red]Error: Tool '{toolName}' not found in .nenv. Use [green]nem tool add {toolName}[/] to install it.[/]");
+                return 1;
             }
         }
         else
@@ -94,88 +97,141 @@ public static class ProxyService
             resolvedToolPath = ResolveSystemTool(toolName);
             if (resolvedToolPath == null)
             {
-                AnsiConsole.MarkupLine($"[red]Error: Tool '{toolName}' not found[/]");
-                Environment.Exit(1);
+                AnsiConsole.MarkupLine($"[red]Error: Tool '{toolName}' not found on PATH.[/]");
+                return 1;
             }
         }
 
-        // Call with full path
         var psi = new ProcessStartInfo
         {
             FileName = resolvedToolPath,
-            UseShellExecute = false,
-            Arguments = string.Join(" ", args.Select(arg => arg.Contains(" ") ? $"\"{arg}\"" : arg))
+            UseShellExecute = false
         };
+        foreach (var arg in args)
+            psi.ArgumentList.Add(arg);
 
         if (envDir != null)
         {
-            // Add managed env to PATH for child processes
-            psi.Environment["PATH"] = envDir + Path.PathSeparator +
-                                      Environment.GetEnvironmentVariable("PATH");
-            psi.Environment["NODE_PATH"] = Path.Combine(envDir, "lib", "node_modules");
-        }
-        // else: keep original PATH unchanged — nem proxies are still there for child processes
+            // Prepend the env (and its tool bin dir) to PATH for the child process.
+            var pathEntries = new List<string>();
+            if (OperatingSystem.IsWindows())
+                pathEntries.Add(envDir);
+            else
+                pathEntries.Add(Path.Combine(envDir, "bin"));
+            pathEntries.Add(envDir);
+            pathEntries.Add(Environment.GetEnvironmentVariable("PATH") ?? "");
 
-        using var process = Process.Start(psi)!;
-        process.WaitForExit();
-        Environment.Exit(process.ExitCode);
+            string separator = OperatingSystem.IsWindows() ? ";" : ":";
+            psi.Environment["PATH"] = string.Join(separator, pathEntries.Distinct(StringComparer.OrdinalIgnoreCase));
+
+            // Let node require() find globally installed env packages.
+            string globalModules = OperatingSystem.IsWindows()
+                ? Path.Combine(envDir, "node_modules")
+                : Path.Combine(envDir, "lib", "node_modules");
+            psi.Environment["NODE_PATH"] = globalModules;
+        }
+
+        try
+        {
+            using var process = Process.Start(psi)!;
+            process.WaitForExit();
+            return process.ExitCode;
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.MarkupLine($"[red]Error: Could not start '{resolvedToolPath}': {Markup.Escape(ex.Message)}[/]");
+            return 1;
+        }
     }
 
-    private static string? ResolveToolInEnv(string envDir, string toolName)
+    /// <summary>
+    /// Resolves a tool inside a nem env directory, checking the common binary locations and extensions.
+    /// </summary>
+    public static string? ResolveToolInEnv(string envDir, string toolName)
     {
-        // Check .nenv/tool.bat (Windows)
-        var batPath = Path.Combine(envDir, toolName + ".bat");
-        if (File.Exists(batPath))
-            return batPath;
+        string[] roots = OperatingSystem.IsWindows()
+            ? [envDir, Path.Combine(envDir, "bin")]
+            : [Path.Combine(envDir, "bin"), envDir];
 
-        // Check .nenv/tool (Unix/Linux executable)
-        var unixPath = Path.Combine(envDir, toolName);
-        if (File.Exists(unixPath))
-            return unixPath;
+        string[] extensions = OperatingSystem.IsWindows()
+            ? [".exe", ".cmd", ".bat", ""]
+            : [""];
+
+        foreach (string root in roots)
+        {
+            foreach (string extension in extensions)
+            {
+                string candidate = Path.Combine(root, toolName + extension);
+                if (File.Exists(candidate))
+                    return candidate;
+            }
+        }
 
         return null;
     }
 
-    private static string? ResolveSystemTool(string toolName)
+    /// <summary>
+    /// Finds a tool on the system PATH, skipping nem's own proxies.
+    /// </summary>
+    public static string? ResolveSystemTool(string toolName)
     {
-        var systemProxyDir = IOPathManager.System.ProxyDirPath;
-        string? result = null;
-
+        string output;
         if (OperatingSystem.IsWindows())
-        {
-            result = RunCommand("where", toolName);
-        }
+            output = RunCapture("where", new[] { toolName }) ?? "";
         else
-        {
-            result = RunCommand("which", toolName);
-        }
+            output = RunCapture("which", new[] { toolName }) ?? "";
 
-        if (string.IsNullOrWhiteSpace(result))
+        if (string.IsNullOrWhiteSpace(output))
             return null;
 
-        // On Windows, `where` returns multiple matches — filter out nem proxies
-        var lines = result.Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
-        var realPath = lines.FirstOrDefault(line =>
-            !Path.GetFullPath(line).StartsWith(Path.GetFullPath(systemProxyDir), StringComparison.OrdinalIgnoreCase));
+        var systemProxyDir = Path.GetFullPath(IOPathManager.System.ProxyDirPath);
+        var lines = output
+            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(l => l.Trim())
+            .Where(l => l.Length > 0 && !Path.GetFullPath(l).Equals(systemProxyDir, StringComparison.OrdinalIgnoreCase)
+                         && !Path.GetFullPath(l).StartsWith(systemProxyDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            .ToList();
 
-        return realPath;
+        if (lines.Count == 0)
+            return null;
+
+        // Prefer real executable files (e.g. node.exe / npm.cmd) over extensionless bash shims.
+        if (OperatingSystem.IsWindows())
+        {
+            string[] preferred = [".exe", ".cmd", ".bat"];
+            foreach (string ext in preferred)
+            {
+                string? match = lines.FirstOrDefault(l => l.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
+                if (match != null)
+                    return match;
+            }
+        }
+
+        return lines[0];
     }
 
-    private static string? RunCommand(string command, string arg)
+    /// <summary>
+    /// Runs a command and returns its standard output, or null on failure.
+    /// </summary>
+    public static string? RunCapture(string command, string[] args)
     {
         try
         {
             var psi = new ProcessStartInfo
             {
                 FileName = command,
-                Arguments = arg,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
+                RedirectStandardError = true,
                 CreateNoWindow = true
             };
+            foreach (var arg in args)
+                psi.ArgumentList.Add(arg);
 
             using var process = Process.Start(psi)!;
-            return process.StandardOutput.ReadToEnd().Trim();
+            string result = process.StandardOutput.ReadToEnd().Trim();
+            process.WaitForExit();
+            return process.ExitCode == 0 ? result : null;
         }
         catch
         {

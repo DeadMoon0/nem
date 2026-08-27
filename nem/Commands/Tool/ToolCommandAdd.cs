@@ -1,13 +1,21 @@
-﻿using Spectre.Console.Cli;
-using System;
+using nem.Services;
+using Spectre.Console.Cli;
+using System.ComponentModel;
 using System.Threading;
 
 namespace nem.Commands.Tool;
 
-internal class ToolCommandAdd : Command
+internal class ToolAddCommandSettings : CommandSettings
 {
-    protected override int Execute(CommandContext context, CancellationToken cancellationToken)
+    [CommandArgument(0, "<package>")]
+    [Description("The npm package to install into the env, e.g. 'ts-node' or 'ts-node@10.9.0'.")]
+    public required string Package { get; init; }
+}
+
+internal class ToolCommandAdd : Command<ToolAddCommandSettings>
+{
+    protected override int Execute(CommandContext context, ToolAddCommandSettings settings, CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        return ToolService.Add(settings.Package);
     }
 }
