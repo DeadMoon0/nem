@@ -50,13 +50,10 @@ internal class InstallCommand : AsyncCommand<InstallCommandSettings>
         string envDir = local.EnsureEnvDirPath();
         await NodeDownloadingService.InstallNodeAsync(config.NodeVersion, envDir, settings.Clean);
 
+        int exit = ToolService.InstallMissing(config, envDir);
+
         ProxyService.TryInstallTool("npm");
         ProxyService.TryInstallTool("npx");
-        foreach (var tool in config.Tools)
-        {
-            ProxyService.TryInstallTool(tool.ToolName);
-        }
-
-        return 0;
+        return exit;
     }
 }

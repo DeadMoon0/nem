@@ -16,7 +16,7 @@
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<PackageTags>Node, NPM, Package, Package Manager</PackageTags>
 		<Description>Local Node.js environment manager for projects</Description>
-		<Version>1.0.0</Version>
+		<Version>1.1.0</Version>
 		<PackageProjectUrl>https://github.com/DeadMoon0/nem</PackageProjectUrl>
 		<RepositoryUrl>https://github.com/DeadMoon0/nem.git</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
@@ -50,7 +50,10 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <None Update="ProxyFiles\NAME">
+	  <None Update="Resources\ResolveVersion.js">
+    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+  </None>
+  <None Update="ProxyFiles\NAME">
 	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 	  </None>
 	  <None Update="ProxyFiles\NAME.bat">
@@ -67,6 +70,7 @@
 
 	<ItemGroup>
 	  <Folder Include="ProxyFiles\" />
+  <Folder Include="Resources\" />
 	</ItemGroup>
 
 </Project>

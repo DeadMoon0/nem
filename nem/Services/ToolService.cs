@@ -1,247 +1,403 @@
-using nem.Common;
-using nem.Common.Models;
-using Newtonsoft.Json;
-using Spectre.Console;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Text;
+using System.Text.RegularExpressions;
+using nem.Common;
+using nem.Common.Models;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using Spectre.Console;
 
 namespace nem.Services;
 
 /// <summary>
-/// Installs npm packages into a nem env (npm -g --prefix &lt;env&gt;) and keeps nem.json and the proxy directory in sync.
+/// Manages the Tools section of nem.json. The 'nem tool' commands are purely declarative
+/// (they only edit nem.json, except for 'remove' which also cleans the env). The env
+/// itself is materialized by 'nem install' via <see cref="InstallMissing"/>.
 /// </summary>
 public static class ToolService
 {
+    // Validates npm package names before they are used to build registry URLs.
+    private static readonly Regex ValidPackageName = new(
+        "^(@[a-z0-9][\\w.-]*\\/)?[a-z0-9][\\w.-]*$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     /// <summary>
-    /// Installs a package (name or name@version) globally into the env of the current directory.
+    /// Node script that resolves a package to an exact version. Fetches the packument
+    /// from the registry and picks, using npm's bundled semver:
+    ///  - range empty        -> newest stable version whose engines.node allows nodeV
+    ///  - range is a version -> that version (validated)
+    ///  - range is a tag     -> the tag's version
+    ///  - range is a range   -> newest stable version in the range
+    /// Prints the version or an empty line. Exits 0 unless the script itself faults.
+    /// </summary>
+    /// <summary>
+    /// Lazily loads the shipped resolver script (Resources/ResolveVersion.js), which
+    /// runs under the env's node so it can use npm's bundled semver implementation.
+    /// </summary>
+    private static string LoadResolveScript()
+    {
+        if (_resolveScript == null)
+        {
+            string dir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
+            string scriptPath = Path.Combine(dir, "Resources", "ResolveVersion.js");
+            _resolveScript = File.ReadAllText(scriptPath);
+        }
+        return _resolveScript;
+    }
+
+    private static string? _resolveScript;
+
+    /// <summary>
+    /// Declares a tool in nem.json (no install). Resolves the version to an exact one:
+    /// user version as-is (validated), or the newest version that supports the env's
+    /// Node version when none is given.
     /// </summary>
     public static int Add(string packageSpec)
     {
-        if (!TryGetEnvContext(out string nemJsonPath, out string envDir))
+        if (!TryGetEnvContext(out NemConfig? config, out string nemJsonPath) || config == null)
             return NotInEnv();
 
-        if (!File.Exists(NodeDownloadingService.PrimaryNodeBinary(envDir)) || !File.Exists(NpmBinary(envDir)))
+        if (!TryParsePackageSpec(packageSpec, out string? packageName, out string? version))
         {
-            AnsiConsole.MarkupLine("[red]The env has no Node installation yet. Run [green]nem install[/] first.[/]");
+            AnsiConsole.MarkupLine($"[red]Invalid package spec:[/] {Markup.Escape(packageSpec)}. Expected [green]<package>[@<version>][/].");
             return 1;
         }
 
-        if (!TryParsePackageSpec(packageSpec, out string packageName, out string? version))
+        if (!ValidPackageName.IsMatch(packageName!))
         {
-            AnsiConsole.MarkupLine($"[red]Invalid package '{Markup.Escape(packageSpec)}'. Expected 'name' or 'name@version'.[/]");
+            AnsiConsole.MarkupLine($"[red]'{Markup.Escape(packageName!)}' is not a valid npm package name.[/]");
             return 1;
         }
 
-        string npmBin = NpmBinary(envDir);
-        if (version == null)
-        {
-            version = ProxyService.RunCapture(npmBin, new[] { "view", packageName, "version" });
-            if (string.IsNullOrWhiteSpace(version))
+        string name = packageName!;
+        string envDir = EnvDirOf(nemJsonPath);
+        string? resolved = null;
+        AnsiConsole.Status()
+            .Spinner(Spinner.Known.Dots)
+            .Start($"Resolving {name} ...", _ =>
             {
-                AnsiConsole.MarkupLine($"[red]Could not resolve the latest version of '{Markup.Escape(packageName)}'. Check the package name.[/]");
-                return 1;
-            }
-            version = version.Trim();
-        }
+                resolved = ResolveVersion(name, version, config.NodeVersion ?? string.Empty, envDir);
+            });
 
-        string spec = $"{packageName}@{version}";
-        string binRoot = BinRoot(envDir);
-        var before = Snapshot(binRoot);
-
-        AnsiConsole.MarkupLine($"[gray]Installing {Markup.Escape(spec)} into {Markup.Escape(envDir)} ...[/]");
-        int exit = RunNpm(npmBin, envDir, new[] { "install", "-g", spec, "--prefix", envDir });
-        if (exit != 0)
+        if (resolved == null)
         {
-            AnsiConsole.MarkupLine("[red]npm install failed.[/]");
-            return exit;
+            AnsiConsole.MarkupLine($"[red]Could not resolve a version for {Markup.Escape(name)}. Check the package name and your network connection.[/]");
+            return 1;
         }
 
-        // Remember the version npm actually resolved (e.g. '15.2' -> '15.2.11').
-        version = ReadInstalledVersion(envDir, packageName) ?? version;
+        var existing = config.Tools.FirstOrDefault(t => string.Equals(t.ToolName, name, StringComparison.OrdinalIgnoreCase));
+        if (existing != null)
+            existing.ToolVersion = resolved;
+        else
+            config.Tools.Add(new NemToolConfig { ToolName = name, ToolVersion = resolved });
 
-        // Create proxies for all new shims (a package can expose several binaries).
-        var newTools = new HashSet<string>();
-        foreach (string file in Snapshot(binRoot).Except(before))
-            AddToolName(newTools, file);
-
-        foreach (string toolName in newTools)
-            ProxyService.TryInstallTool(toolName);
-
-        var tools = ToolsOf(nemJsonPath).Where(t => t.ToolName != packageName).ToList();
-        tools.Add(new NemToolConfig { ToolName = packageName, ToolVersion = version });
-        SaveTools(nemJsonPath, tools);
-
-        AnsiConsole.MarkupLine($"[green]Installed {Markup.Escape(packageName)}@{Markup.Escape(version)}.[/]");
-        foreach (string toolName in newTools)
-            AnsiConsole.MarkupLine($"[gray]Proxy created for '{Markup.Escape(toolName)}'.[/]");
-
+        File.WriteAllText(nemJsonPath, JsonConvert.SerializeObject(config, Formatting.Indented) + Environment.NewLine);
+        AnsiConsole.MarkupLine($"[green]Added[/] {name}@{resolved} to {Markup.Escape(Path.GetFileName(nemJsonPath))}.");
+        AnsiConsole.MarkupLine($"Run [green]nem install[/] to install it into the env.");
         return 0;
     }
 
     /// <summary>
-    /// Removes a package from the env and from nem.json, and removes its proxies.
+    /// Removes a tool from nem.json. If the env has it installed, uninstalls it and
+    /// deletes its proxies.
     /// </summary>
     public static int Remove(string packageName)
     {
-        if (!TryGetEnvContext(out string nemJsonPath, out string envDir))
+        if (!TryGetEnvContext(out NemConfig? config, out string nemJsonPath) || config == null)
             return NotInEnv();
 
-        var tools = ToolsOf(nemJsonPath);
-        if (!tools.Any(t => t.ToolName == packageName))
+        var tool = config.Tools.FirstOrDefault(t => string.Equals(t.ToolName, packageName, StringComparison.OrdinalIgnoreCase));
+        if (tool == null)
         {
-            AnsiConsole.MarkupLine($"[red]Tool '{Markup.Escape(packageName)}' is not in {Markup.Escape(IOPathManager.Local(Path.GetDirectoryName(nemJsonPath)!).ConfigFileName)}. Use [green]nem tool list[/].[/]");
+            AnsiConsole.MarkupLine($"[red]Tool '{Markup.Escape(packageName)}' is not listed in {Markup.Escape(Path.GetFileName(nemJsonPath))}.[/]");
             return 1;
         }
 
-        string npmBin = NpmBinary(envDir);
-        string binRoot = BinRoot(envDir);
-        var before = Snapshot(binRoot);
+        config.Tools.Remove(tool);
+        string nemJsonText = JsonConvert.SerializeObject(config, Formatting.Indented) + Environment.NewLine;
+        File.WriteAllText(nemJsonPath, nemJsonText);
+        AnsiConsole.MarkupLine($"Removed {packageName} from {Markup.Escape(Path.GetFileName(nemJsonPath))}.");
 
-        if (File.Exists(npmBin))
-        {
-            int exit = RunNpm(npmBin, envDir, new[] { "uninstall", "-g", packageName, "--prefix", envDir });
-            if (exit != 0)
-                AnsiConsole.MarkupLine("[yellow]npm uninstall reported an error, continuing...[/]");
-        }
+        string envDir = EnvDirOf(nemJsonPath);
+        if (!IsToolInstalled(envDir, packageName))
+            return 0;
 
-        var removedTools = new HashSet<string>();
-        foreach (string file in before.Except(Snapshot(binRoot)))
-            AddToolName(removedTools, file);
+        List<string> bins = ReadToolBins(envDir, packageName);
+        int exit = RunNpm(envDir, new[] { "uninstall", "-g", packageName }, capture: false);
+        foreach (string bin in bins)
+            DeleteProxy(bin);
 
-        foreach (string toolName in removedTools)
-            DeleteProxy(toolName);
-
-        SaveTools(nemJsonPath, tools.Where(t => t.ToolName != packageName).ToList());
-        AnsiConsole.MarkupLine($"[green]Removed {Markup.Escape(packageName)} from the env.[/]");
-        return 0;
+        AnsiConsole.MarkupLine($"Uninstalled {packageName} from the env.");
+        return exit;
     }
 
-    /// <summary>
-    /// Lists the tools configured in the env's nem.json.
-    /// </summary>
     public static int List()
     {
-        if (!TryGetEnvContext(out string nemJsonPath, out _))
+        if (!TryGetEnvContext(out NemConfig? config, out string nemJsonPath) || config == null)
             return NotInEnv();
 
-        var tools = ToolsOf(nemJsonPath);
-        if (tools.Count == 0)
-        {
-            AnsiConsole.MarkupLine("[yellow]No tools are configured. Use [green]nem tool add &lt;package&gt;[/] to add one.[/]");
-            return 0;
-        }
-
+        string envDir = EnvDirOf(nemJsonPath);
         var table = new Table();
         table.AddColumn(new TableColumn("Tool"));
         table.AddColumn(new TableColumn("Version"));
-        foreach (NemToolConfig tool in tools)
-            table.AddRow(tool.ToolName, tool.ToolVersion);
+        table.AddColumn(new TableColumn("Status"));
+
+        foreach (var tool in config.Tools)
+        {
+            bool installed = IsToolInstalled(envDir, tool.ToolName);
+            table.AddRow(tool.ToolName, tool.ToolVersion, installed ? "[green]installed[/]" : "[yellow]not installed[/]");
+        }
 
         AnsiConsole.Write(table);
         return 0;
     }
 
-    static bool TryGetEnvContext(out string nemJsonPath, out string envDir)
-    {
-        if (IOService.TryGetContainingEnv(Directory.GetCurrentDirectory(), out string? json))
-        {
-            nemJsonPath = json!;
-            envDir = IOPathManager.Local(Path.GetDirectoryName(nemJsonPath)!).EnvDirPath;
-            return true;
-        }
-
-        nemJsonPath = "";
-        envDir = "";
-        return false;
-    }
-
-    static int NotInEnv()
-    {
-        AnsiConsole.MarkupLine("[red]No nem env found in this directory or any parent. Run [green]nem init[/] first.[/]");
-        return 1;
-    }
-
-    static string NpmBinary(string envDir)
-    {
-        return OperatingSystem.IsWindows()
-            ? Path.Combine(envDir, "npm.cmd")
-            : Path.Combine(envDir, "bin", "npm");
-    }
-
-    static string BinRoot(string envDir)
-    {
-        return OperatingSystem.IsWindows()
-            ? envDir
-            : Path.Combine(envDir, "bin");
-    }
-
     /// <summary>
-    /// Parses 'name' or 'name@version' (handles scoped names like @scope/name@1.0.0).
+    /// Installs every tool declared in nem.json that is missing from the env, then
+    /// (re)creates the proxies for all declared tools. Called by 'nem install'.
     /// </summary>
-    static bool TryParsePackageSpec(string spec, out string name, out string? version)
+    public static int InstallMissing(NemConfig config, string envDir)
     {
-        int index = spec.LastIndexOf('@');
-        if (index > 0 && index < spec.Length - 1)
+        int exit = 0;
+        bool anythingMissing = false;
+        foreach (var tool in config.Tools)
         {
-            name = spec.Substring(0, index);
-            version = spec.Substring(index + 1);
-            return true;
+            if (IsToolInstalled(envDir, tool.ToolName))
+                continue;
+            anythingMissing = true;
+            AnsiConsole.MarkupLine($"Installing [green]{tool.ToolName}@{tool.ToolVersion}[/] ...");
+            int result = RunNpm(envDir, new[] { "install", "-g", $"{tool.ToolName}@{tool.ToolVersion}" }, capture: false);
+            if (result != 0)
+                exit = result;
         }
 
-        if (index == spec.Length - 1)
+        if (!anythingMissing)
+            AnsiConsole.MarkupLine("All tools up to date.");
+
+        foreach (var tool in config.Tools)
         {
-            name = spec;
-            version = null;
+            if (!IsToolInstalled(envDir, tool.ToolName))
+                continue;
+            foreach (string bin in ReadToolBins(envDir, tool.ToolName))
+            {
+                // Only proxy bins that actually exist in the env (avoids ghosts for
+                // packages without a bin entry).
+                if (ProxyService.ResolveToolInEnv(envDir, bin) != null)
+                    ProxyService.TryInstallTool(bin);
+            }
+        }
+
+        return exit;
+    }
+
+    // ---------- helpers ----------
+
+    public static bool TryParsePackageSpec(string input, out string? packageName, out string? version)
+    {
+        packageName = null;
+        version = null;
+        input = input.Trim();
+
+        // Use the last '@' so scoped names like @scope/pkg@version parse correctly.
+        int atIndex = input.LastIndexOf('@');
+        if (atIndex > 0 && atIndex < input.Length - 1)
+        {
+            packageName = input[..atIndex];
+            version = input[(atIndex + 1)..];
+        }
+        else
+        {
+            packageName = input;
+        }
+
+        if (string.IsNullOrWhiteSpace(packageName))
+        {
             return false;
         }
 
-        name = spec;
-        version = null;
+        if (string.IsNullOrWhiteSpace(version))
+        {
+            version = null;
+        }
+
         return true;
     }
 
-    static void AddToolName(HashSet<string> names, string filePath)
+    /// <summary>
+    /// The global modules root of the env (where 'npm -g' installs packages).
+    /// </summary>
+    public static string ToolModulesRoot(string envDir) =>
+        OperatingSystem.IsWindows()
+            ? Path.Combine(envDir, "node_modules")
+            : Path.Combine(envDir, "lib", "node_modules");
+
+    public static bool IsToolInstalled(string envDir, string packageName) =>
+        File.Exists(Path.Combine(ToolModulesRoot(envDir), packageName, "package.json"));
+
+    /// <summary>
+    /// Reads the bin entries of an installed package; falls back to a name guess.
+    /// </summary>
+    public static List<string> ReadToolBins(string envDir, string packageName)
     {
-        string fileName = Path.GetFileName(filePath);
-        string extension = Path.GetExtension(fileName);
-        if (extension is ".cmd" or ".ps1" or ".bat")
-            fileName = Path.GetFileNameWithoutExtension(fileName);
-        if (fileName.Length > 0)
-            names.Add(fileName);
+        var bins = new List<string>();
+        string packageJson = Path.Combine(ToolModulesRoot(envDir), packageName, "package.json");
+        if (File.Exists(packageJson))
+        {
+            try
+            {
+                var doc = JObject.Parse(File.ReadAllText(packageJson));
+                var bin = doc["bin"];
+                if (bin != null)
+                {
+                    if (bin.Type == JTokenType.String && !string.IsNullOrWhiteSpace(bin.ToString()))
+                        bins.Add(Path.GetFileName(bin.ToString()));
+                    else if (bin.Type == JTokenType.Object)
+                        bins.AddRange(((JObject)bin).Properties().Select(p => p.Name));
+                }
+            }
+            catch (Exception)
+            {
+                // Malformed package.json: fall back to the name guess below.
+            }
+        }
+
+        if (bins.Count == 0)
+            bins.Add(DefaultBinName(packageName));
+
+        return bins.Distinct().ToList();
     }
 
-    static List<string> Snapshot(string dir)
+    private static string DefaultBinName(string packageName) =>
+        packageName.Contains('/') ? packageName[(packageName.LastIndexOf('/') + 1)..] : packageName;
+
+    /// <summary>
+    /// Runs the env's npm with --prefix <envDir> (the env's node install IS the npm
+    /// prefix; the flag is required on Windows to make npm create the bin shims).
+    /// </summary>
+    private static int RunNpm(string envDir, string[] args, bool capture)
     {
-        return Directory.Exists(dir) ? Directory.EnumerateFiles(dir).ToList() : new List<string>();
+        string npm = OperatingSystem.IsWindows() ? Path.Combine(envDir, "npm.cmd") : Path.Combine(envDir, "npm");
+        if (!File.Exists(npm))
+        {
+            AnsiConsole.MarkupLine($"[red]npm not found in the env at {Markup.Escape(npm)}. Run [green]nem install[/] first.[/]");
+            return 1;
+        }
+
+        var psi = new ProcessStartInfo(npm)
+        {
+            UseShellExecute = false,
+            WorkingDirectory = envDir,
+        };
+        if (capture)
+        {
+            psi.RedirectStandardOutput = true;
+            psi.StandardOutputEncoding = Encoding.UTF8;
+        }
+        psi.ArgumentList.Add("--prefix");
+        psi.ArgumentList.Add(envDir);
+        foreach (string arg in args)
+            psi.ArgumentList.Add(arg);
+
+        // Make sure the env's node is first on PATH for anything npm spawns.
+        string pathVar = Environment.GetEnvironmentVariable("PATH") ?? "";
+        psi.Environment["PATH"] = envDir + Path.PathSeparator + pathVar;
+        psi.Environment["npm_config_update_notifier"] = "false";
+
+        using var process = Process.Start(psi);
+        if (process == null)
+            return 1;
+
+        if (capture)
+        {
+            // stdout is piped and discarded; stderr stays inherited so problems are visible.
+            process.StandardOutput.ReadToEnd();
+        }
+        process.WaitForExit();
+        return process.ExitCode;
     }
 
     /// <summary>
-    /// Reads the version that npm actually resolved, from the installed package.json.
+    /// Runs the env's node (or the system node) with the resolver script.
+    /// Returns the resolved version or null.
     /// </summary>
-    static string? ReadInstalledVersion(string envDir, string packageName)
+    private static string? ResolveVersion(string packageName, string? range, string nodeVersion, string envDir)
     {
-        string moduleDir = OperatingSystem.IsWindows()
-            ? Path.Combine(envDir, "node_modules", packageName)
-            : Path.Combine(envDir, "lib", "node_modules", packageName);
-        string packageJson = Path.Combine(moduleDir, "package.json");
-        if (!File.Exists(packageJson))
-            return null;
+        // Prefer the env's node (it always bundles npm's semver); fall back to a node on PATH.
+        string node = Path.Combine(envDir, "node.exe");
+        if (!File.Exists(node))
+            node = "node";
+
+        var psi = new ProcessStartInfo(node)
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
+            WorkingDirectory = envDir,
+        };
+        psi.ArgumentList.Add("-e");
+        psi.ArgumentList.Add(LoadResolveScript());
+        psi.ArgumentList.Add(packageName);
+        psi.ArgumentList.Add(nodeVersion ?? "");
+        psi.ArgumentList.Add(range ?? "");
 
         try
         {
-            using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(packageJson));
-            return doc.RootElement.TryGetProperty("version", out var element) ? element.GetString() : null;
+            using var process = Process.Start(psi);
+            if (process == null)
+                return null;
+            string output = process.StandardOutput.ReadToEnd();
+            process.StandardError.ReadToEnd();
+            process.WaitForExit();
+            if (process.ExitCode != 0)
+                return null;
+
+            string? version = output.Trim().Split('\n', '\r').FirstOrDefault(s => !string.IsNullOrWhiteSpace(s));
+            return string.IsNullOrWhiteSpace(version) ? null : version.Trim().Trim('"');
         }
         catch (Exception)
         {
+            // No node available at all (not installed, not on PATH).
             return null;
         }
     }
 
-    static void DeleteProxy(string toolName)
+    private static string EnvDirOf(string nemJsonPath) =>
+        IOPathManager.Local(Path.GetDirectoryName(nemJsonPath)!).EnvDirPath;
+
+    private static int NotInEnv()
+    {
+        AnsiConsole.MarkupLine($"[red]No {Markup.Escape(IOPathManager.Local(Directory.GetCurrentDirectory()).ConfigFileName)} found in the current directory or any parent.[/]");
+        AnsiConsole.MarkupLine($"Run [green]nem init <nodeVersion>[/] first.");
+        return 1;
+    }
+
+    private static bool TryGetEnvContext(out NemConfig? config, out string nemJsonPath)
+    {
+        config = null;
+        nemJsonPath = string.Empty;
+        if (!IOService.TryGetContainingEnv(Directory.GetCurrentDirectory(), out string? found))
+            return false;
+
+        nemJsonPath = found;
+        try
+        {
+            config = JsonConvert.DeserializeObject<NemConfig>(File.ReadAllText(nemJsonPath));
+        }
+        catch (Exception)
+        {
+            config = null;
+        }
+        return config != null;
+    }
+
+    private static void DeleteProxy(string toolName)
     {
         string proxyDir = IOPathManager.System.ProxyDirPath;
         foreach (string name in new[] { toolName, toolName + ".bat", toolName + ".ps1" })
@@ -250,32 +406,5 @@ public static class ToolService
             if (File.Exists(path))
                 File.Delete(path);
         }
-    }
-
-    static int RunNpm(string npmBin, string cwd, string[] args)
-    {
-        var psi = new ProcessStartInfo { FileName = npmBin, UseShellExecute = false, WorkingDirectory = cwd };
-        foreach (string arg in args)
-            psi.ArgumentList.Add(arg);
-
-        // Make sure the env's node is used for npm's own script shims.
-        psi.Environment["PATH"] = cwd + (OperatingSystem.IsWindows() ? ";" + (Environment.GetEnvironmentVariable("PATH") ?? "") : ":" + (Environment.GetEnvironmentVariable("PATH") ?? ""));
-
-        using var process = Process.Start(psi)!;
-        process.WaitForExit();
-        return process.ExitCode;
-    }
-
-    static List<NemToolConfig> ToolsOf(string nemJsonPath)
-    {
-        NemConfig config = JsonConvert.DeserializeObject<NemConfig>(File.ReadAllText(nemJsonPath))!;
-        return config.Tools.ToList();
-    }
-
-    static void SaveTools(string nemJsonPath, List<NemToolConfig> tools)
-    {
-        NemConfig config = JsonConvert.DeserializeObject<NemConfig>(File.ReadAllText(nemJsonPath))!;
-        config.Tools = tools;
-        File.WriteAllText(nemJsonPath, JsonConvert.SerializeObject(config, Formatting.Indented));
     }
 }

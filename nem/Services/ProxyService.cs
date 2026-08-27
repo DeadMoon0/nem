@@ -87,7 +87,8 @@ public static class ProxyService
             resolvedToolPath = ResolveToolInEnv(envDir, toolName);
             if (resolvedToolPath == null)
             {
-                AnsiConsole.MarkupLine($"[red]Error: Tool '{toolName}' not found in .nenv. Use [green]nem tool add {toolName}[/] to install it.[/]");
+                AnsiConsole.MarkupLine($"[red]Error: Tool '{toolName}' is not available in the env.[/]");
+                AnsiConsole.MarkupLine($"Declare it with [green]nem tool add {toolName}[/] and run [green]nem install[/], or install it into the env directly.");
                 return 1;
             }
         }
