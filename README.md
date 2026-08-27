@@ -40,30 +40,41 @@ $ nem init 18.12.0 [path]
 # in the current or the given folder
 ```
 
+### Manage tools (declarative)
+```bash
+$ nem tool add ts-node@10.9.0
+# Records ts-node@10.9.0 in nem.json. Nothing is installed yet.
+
+$ nem tool add @angular/cli
+# No version given? nem resolves the newest stable version whose
+# engines.node field supports the env's NodeVersion (from the npm
+# registry) and records that exact version in nem.json.
+
+$ nem tool list
+# Declared tools with installed / not installed status
+
+$ nem tool remove ts-node
+# Removes it from nem.json; if the env has it installed, uninstalls
+# it and deletes its proxies.
+```
+
+The `nem tool` commands only touch `nem.json` (and clean the env on remove) — they never install packages. That keeps them fast and lets you edit declarations before materializing.
+
 ### Install the environment
 ```bash
 $ nem install [path]
-# Downloads the declared Node version (cached in %APPDATA%\nem\download)
-# and copies it into .nenv/, then (re)creates proxies for npm, npx
-# and every tool listed in nem.json
+# The single materialization step:
+#   1. Downloads the declared Node version (cached in %APPDATA%\nem\download)
+#      and copies it into .nenv/
+#   2. Installs every tool declared in nem.json that is missing
+#   3. Creates global proxies for npm, npx and every binary the
+#      installed packages expose (from their package.json "bin" field)
 
 $ nem install --clean [path]
 # Same, but wipes the cached zip, the cached extraction and .nenv first
 ```
 
-### Manage tools
-```bash
-$ nem tool add ng@15.2
-# Resolves 'ng' against npm, installs it into the .nenv via
-# 'npm install -g ng@15.2 --prefix .nenv', creates a proxy for 'ng'
-# and records the resolved version in nem.json
-
-$ nem tool add ts-node@10.9.0
-$ nem tool list
-$ nem tool remove ts-node
-```
-
-A package can expose several binaries (e.g. `ts-node` ships `ts-node`, `ts-node-esm`, ...); nem proxies every new binary it finds.
+`nem install` is idempotent — re-run it any time; only what is missing gets installed.
 
 ### Use tools
 ```bash
@@ -132,10 +143,22 @@ Proxies exist as `ng`, `ng.bat` (cmd) and `ng.ps1` (PowerShell). `nem install` r
 
 **4. Tool installation** — npm-powered
 ```
-nem tool add ng@15.2
-  -> npm install -g ng@15.2 --prefix .nenv
+nem install
+  -> for each missing tool in nem.json:
+       npm install -g <tool>@<version> --prefix .nenv
+  -> reads each package's "bin" entries, creates a proxy per binary
 ```
-npm handles dependency resolution; the package and its shims land in `.nenv`. nem only records the result in `nem.json` and creates the global proxies.
+npm handles dependency resolution; the packages and their shims land in `.nenv`. Proxies are derived from the installed `package.json` files, so every binary a tool ships (e.g. `ts-node` also ships `ts-node-esm`, `ts-script`, ...) gets one.
+
+**5. Version resolution** — registry + engines.node
+```
+nem tool add @angular/cli   (env NodeVersion = 18.12.0)
+  -> fetches the packument from the npm registry
+  -> picks the newest stable version whose engines.node range
+     allows 18.12.0  =>  16.2.16, not the latest 22.x
+  -> records @angular/cli@16.2.16 in nem.json
+```
+An explicit `@version` or dist-tag is used as-is (validated against the registry).
 
 ### Caches
 | Path | Content |
