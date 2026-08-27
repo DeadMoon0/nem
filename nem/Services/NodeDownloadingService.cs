@@ -1,11 +1,14 @@
 using nem.Common;
 using Spectre.Console;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using System.Net.Http;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace nem.Services;
@@ -58,6 +61,132 @@ public static class NodeDownloadingService
         else if (!clean)
         {
             AnsiConsole.MarkupLine("[yellow]Node is already installed in the env, nothing to do.[/]");
+        }
+    }
+
+    // ---- Node.js version validation / resolution (nodejs.org) ----
+
+    static List<string>? _availableVersions;
+
+    /// <summary>
+    /// Validates a full Node.js version (e.g. "18.12.0") against nodejs.org and
+    /// resolves partial specs ("22", "18.12") to the newest matching release.
+    /// Returns the version without a leading "v". Throws InvalidOperationException
+    /// with a user-facing message on failure.
+    /// </summary>
+    public static async Task<string> ResolveNodeVersionAsync(string spec)
+    {
+        string input = spec.Trim();
+        if (input.Length > 0 && char.ToLowerInvariant(input[0]) == 'v')
+            input = input[1..];
+        input = input.TrimEnd('.');
+        if (input.Length == 0)
+            throw new InvalidOperationException("A node version is required.");
+
+        if (IsPartialSpec(input))
+        {
+            List<string> versions = await GetAvailableVersionsAsync();
+            string prefix = input + ".";
+            string? best = null;
+            foreach (string v in versions)
+            {
+                if (v.Length <= 1 || v[0] != 'v')
+                    continue;
+                string candidate = v[1..];
+                if (candidate.Contains('-'))
+                    continue; // official releases only
+                if (candidate.StartsWith(prefix, System.StringComparison.Ordinal) &&
+                    (best == null || CompareVersions(candidate, best) > 0))
+                    best = candidate;
+            }
+
+            if (best == null)
+                throw new InvalidOperationException($"No Node.js release matches '{spec.Trim()}' (checked https://nodejs.org/dist). See https://nodejs.org/en/download for available versions.");
+            return best;
+        }
+
+        // Full spec: it must exist.
+        bool listed;
+        try
+        {
+            listed = (await GetAvailableVersionsAsync()).Contains("v" + input, System.StringComparer.Ordinal);
+        }
+        catch (InvalidOperationException)
+        {
+            listed = false; // index unreachable; try the direct check below
+        }
+        if (listed)
+            return input;
+
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+            using var response = await client.GetAsync($"https://nodejs.org/dist/v{input}/", HttpCompletionOption.ResponseHeadersRead);
+            if (response.IsSuccessStatusCode)
+                return input; // e.g. an RC that is not listed in the index
+        }
+        catch (Exception)
+        {
+            throw new InvalidOperationException("Could not reach https://nodejs.org to validate the node version.");
+        }
+
+        throw new InvalidOperationException($"Node.js version '{spec.Trim()}' does not exist. See https://nodejs.org/en/download for available versions.");
+    }
+
+    /// <summary>
+    /// A spec is partial (resolve to newest matching release) when it is
+    /// "major" or "major.minor" with numeric parts; anything else is exact.
+    /// </summary>
+    static bool IsPartialSpec(string input)
+    {
+        string[] parts = input.Split('.');
+        if (parts.Length > 2)
+            return false;
+        return parts.All(p => p.Length > 0 && p.All(char.IsDigit));
+    }
+
+    static int CompareVersions(string a, string b)
+    {
+        int[] pa = a.Split('.').Select(int.Parse).ToArray();
+        int[] pb = b.Split('.').Select(int.Parse).ToArray();
+        for (int i = 0; i < 3; i++)
+        {
+            int x = i < pa.Length ? pa[i] : 0;
+            int y = i < pb.Length ? pb[i] : 0;
+            if (x != y)
+                return x.CompareTo(y);
+        }
+        return 0;
+    }
+
+    static async Task<List<string>> GetAvailableVersionsAsync()
+    {
+        if (_availableVersions != null)
+            return _availableVersions;
+
+        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        string json;
+        try
+        {
+            json = await client.GetStringAsync("https://nodejs.org/dist/index.json");
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException)
+        {
+            throw new InvalidOperationException("Could not reach https://nodejs.org/dist (is the network available?)", e);
+        }
+
+        try
+        {
+            List<string> versions = new();
+            using JsonDocument doc = JsonDocument.Parse(json);
+            foreach (JsonElement entry in doc.RootElement.EnumerateArray())
+                versions.Add(entry.GetProperty("version").GetString()!);
+            _availableVersions = versions;
+            return versions;
+        }
+        catch (Exception e)
+        {
+            throw new InvalidOperationException("Could not parse the nodejs.org version index.", e);
         }
     }
 

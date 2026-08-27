@@ -1,16 +1,18 @@
 using nem.Services;
 using Spectre.Console;
+using System;
 using Spectre.Console.Cli;
 using System.ComponentModel;
 using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace nem.Commands;
 
 internal class InitCommandSettings : CommandSettings
 {
     [CommandArgument(0, "<nodeVersion>")]
-    [Description("The version of Node the env is initialized for.")]
+    [Description("The Node version the env is initialized for. Partial versions (\"22\", \"18.12\") resolve to the newest matching release.")]
     public required string NodeVersion { get; init; }
 
     [CommandArgument(1, "[path]")]
@@ -19,15 +21,32 @@ internal class InitCommandSettings : CommandSettings
     public required string Path { get; init; }
 }
 
-internal class InitCommand : Command<InitCommandSettings>
+internal class InitCommand : AsyncCommand<InitCommandSettings>
 {
-    protected override int Execute(CommandContext context, InitCommandSettings settings, CancellationToken cancellationToken)
+    protected override async Task<int> ExecuteAsync(CommandContext context, InitCommandSettings settings, CancellationToken cancellationToken)
     {
         string path = Path.GetFullPath(settings.Path);
         AnsiConsole.MarkupLine($"[gray]Init new Env in: {Markup.Escape(path)}[/]");
-        AnsiConsole.MarkupLine($"[gray]Node Version: {Markup.Escape(settings.NodeVersion)}[/]");
+
+        string version;
+        try
+        {
+            version = await NodeDownloadingService.ResolveNodeVersionAsync(settings.NodeVersion);
+        }
+        catch (InvalidOperationException e)
+        {
+            AnsiConsole.MarkupLine($"[red]{Markup.Escape(e.Message)}[/]");
+            return 1;
+        }
+
+        string requested = settings.NodeVersion.Trim().TrimStart('v', 'V').TrimEnd('.');
+        if (!requested.Equals(version, System.StringComparison.OrdinalIgnoreCase))
+            AnsiConsole.MarkupLine($"[gray]Resolved '{Markup.Escape(requested)}' to Node.js [green]{version}[/] (newest matching release).[/]");
+        AnsiConsole.MarkupLine($"[gray]Node Version: [green]{version}[/][/]");
         AnsiConsole.WriteLine("");
-        IOService.InitEnv(path, settings.NodeVersion);
+
+        Directory.CreateDirectory(path);
+        IOService.InitEnv(path, version);
         AnsiConsole.WriteLine("");
         AnsiConsole.MarkupLine("[Green1]Success[/] [Gray50]The env was initialized.[/]");
         AnsiConsole.WriteLine("");
