@@ -4,6 +4,12 @@ on:
   push:
     tags: ['v*']
 
+# Required for NuGet trusted publishing: the workflow's OIDC identity
+# (exposed as github.token) is what authenticates the push.
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -35,5 +41,8 @@ jobs:
       - name: Pack
         run: dotnet pack nem/nem.csproj -c Release -o artifacts
 
+      # Trusted publishing: no API key. The OIDC JWT proves this job ran on
+      # tag v* in DeadMoon0/nem's publish.yml, which must match the trusted
+      # publisher registered on nuget.org for the package.
       - name: Publish to NuGet
-        run: dotnet nuget push artifacts/nem.*.nupkg --api-key "${{ secrets.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json
+        run: dotnet nuget push artifacts/nem.*.nupkg --source https://api.nuget.org/v3/index.json --api-key "${{ github.token }}"
