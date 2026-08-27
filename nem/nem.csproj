@@ -16,12 +16,12 @@
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<PackageTags>Node, NPM, Package, Package Manager</PackageTags>
 		<Description>Local Node.js environment manager for projects</Description>
-		<Version>1.1.0</Version>
+		<Version>1.0.0</Version>
 		<PackageProjectUrl>https://github.com/DeadMoon0/nem</PackageProjectUrl>
 		<RepositoryUrl>https://github.com/DeadMoon0/nem.git</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
 		<Copyright>Copyright (c) DeadMoon0 2026</Copyright>
-		<PackageReleaseNotes>Working run/tool install, packaging fixes.</PackageReleaseNotes>
+		<PackageReleaseNotes>Initial public release.</PackageReleaseNotes>
 		<PackAsTool>True</PackAsTool>
 		<ToolCommandName>nem</ToolCommandName>
 		<!-- The proxy templates (NAME.bat/NAME.ps1/NAME) ship under tools/ on purpose; -->
