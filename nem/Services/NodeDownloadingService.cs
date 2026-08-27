@@ -69,6 +69,52 @@ public static class NodeDownloadingService
     static List<string>? _availableVersions;
 
     /// <summary>
+    /// Normalizes a version spec: trims whitespace, a leading "v" and a trailing ".".
+    /// </summary>
+    public static string NormalizeVersion(string spec)
+    {
+        string s = spec.Trim();
+        if (s.Length > 0 && char.ToLowerInvariant(s[0]) == 'v')
+            s = s[1..];
+        return s.TrimEnd('.');
+    }
+
+    /// <summary>
+    /// True for specs with one or two numeric parts ("22", "22.0") that match a whole
+    /// range of releases instead of exactly one.
+    /// </summary>
+    public static bool IsPartialVersionSpec(string spec)
+    {
+        string s = NormalizeVersion(spec);
+        if (s.Length == 0)
+            return false;
+
+        bool numericOnly = true;
+        int dots = 0;
+        foreach (char c in s)
+        {
+            if (c == '.') dots++;
+            else if (!char.IsDigit(c)) { numericOnly = false; break; }
+        }
+        return numericOnly && dots <= 1;
+    }
+
+    /// <summary>
+    /// True when a (possibly partial) version spec matches a fully resolved version:
+    /// "22" matches "22.23.2" but "22.3" does not. Exact specs compare as versions.
+    /// </summary>
+    public static bool VersionSpecMatches(string spec, string resolved)
+    {
+        string s = NormalizeVersion(spec);
+        if (s.Length == 0)
+            return true;
+
+        if (IsPartialVersionSpec(s))
+            return resolved.StartsWith(s + ".", System.StringComparison.Ordinal);
+        return s.Equals(resolved, System.StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// Validates a full Node.js version (e.g. "18.12.0") against nodejs.org and
     /// resolves partial specs ("22", "18.12") to the newest matching release.
     /// Returns the version without a leading "v". Throws InvalidOperationException

@@ -18,9 +18,25 @@ public static class IOService
 
         string configPath = local.ConfigFilePath;
         if (File.Exists(configPath))
-            AnsiConsole.MarkupLine("[yellow]Skipped " + local.ConfigFileName + "-File because it already exists.[/]");
+        {
+            // Reconcile an existing config (e.g. one holding the partial spec "22")
+            // with the fully resolved version, keeping everything else (tools) intact.
+            NemConfig existing = JsonConvert.DeserializeObject<NemConfig>(File.ReadAllText(configPath)) ?? new NemConfig();
+            if (!string.Equals(existing.NodeVersion, version, System.StringComparison.OrdinalIgnoreCase))
+            {
+                existing.NodeVersion = version;
+                File.WriteAllText(configPath, JsonConvert.SerializeObject(existing, Formatting.Indented));
+                AnsiConsole.MarkupLine($"[yellow]Updated {local.ConfigFileName} to Node version {version}.[/]");
+            }
+            else
+            {
+                AnsiConsole.MarkupLine("[yellow]Skipped " + local.ConfigFileName + "-File because it already exists.[/]");
+            }
+        }
         else
+        {
             File.WriteAllText(configPath, JsonConvert.SerializeObject(new NemConfig { NodeVersion = version }, Formatting.Indented));
+        }
 
         string envPath = local.EnvDirPath;
         if (Directory.Exists(envPath))
