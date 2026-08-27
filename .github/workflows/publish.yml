@@ -4,10 +4,10 @@ on:
   push:
     tags: ['v*']
 
-# Required for NuGet trusted publishing: the workflow's OIDC identity
-# (exposed as github.token) is what authenticates the push.
+# contents: write  - create the GitHub Release
+# id-token: write  - NuGet trusted publishing (OIDC identity exposed as github.token)
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 jobs:
@@ -46,3 +46,9 @@ jobs:
       # publisher registered on nuget.org for the package.
       - name: Publish to NuGet
         run: dotnet nuget push artifacts/nem.*.nupkg --source https://api.nuget.org/v3/index.json --api-key "${{ github.token }}"
+
+      # Release notes come from the tagged commit message.
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" --notes "$(git log -1 --format=%B)" artifacts/nem.*.nupkg
