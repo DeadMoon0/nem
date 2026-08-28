@@ -30,24 +30,24 @@ public static class NodeDownloadingService
         if (IsPartialVersionSpec(version))
             version = await ResolveNodeVersionAsync(version);
 
-        string tag = GetPlatformTag(version);
-        string fileName = $"{tag}.zip";
+        (string tag, string archiveExtension) = GetPlatformPackage(version);
+        string fileName = $"{tag}.{archiveExtension}";
         string url = $"https://nodejs.org/dist/v{version}/{fileName}";
-        string zipPath = Path.Combine(IOPathManager.System.DownloadCacheDirPath, fileName);
+        string archivePath = Path.Combine(IOPathManager.System.DownloadCacheDirPath, fileName);
         string extractDir = IOPathManager.System.ExtractCacheDirPath;
         string extractedNode = Path.Combine(extractDir, tag);
         string primaryBinary = PrimaryNodeBinary(envDir);
 
         if (clean)
         {
-            DeleteIfExists(zipPath);
+            DeleteIfExists(archivePath);
             DeleteDirectoryIfExists(extractedNode);
             WipeDirectory(envDir);
             AnsiConsole.MarkupLine("[gray]Cleaned previous install.[/]");
         }
 
-        if (!File.Exists(zipPath))
-            await DownloadAsync(url, zipPath);
+        if (!File.Exists(archivePath))
+            await DownloadAsync(url, archivePath);
         else
             AnsiConsole.MarkupLine($"[gray]Using cached {fileName}.[/]");
 
@@ -55,7 +55,10 @@ public static class NodeDownloadingService
         {
             AnsiConsole.MarkupLine("[gray]Starting extraction...[/]");
             Directory.CreateDirectory(extractDir);
-            ZipFile.ExtractToDirectory(zipPath, extractDir, overwriteFiles: true);
+            if (archiveExtension == "zip")
+                ZipFile.ExtractToDirectory(archivePath, extractDir, overwriteFiles: true);
+            else
+                ExtractWithTar(archivePath, extractDir);
             AnsiConsole.MarkupLine("[gray]Extraction successful.[/]");
         }
 
@@ -63,6 +66,7 @@ public static class NodeDownloadingService
         {
             AnsiConsole.MarkupLine("[gray]Starting to copy to .nenv dir...[/]");
             CopyFilesRecursively(extractedNode, envDir);
+            EnsureUnixExecutableBits(envDir);
             AnsiConsole.MarkupLine("[green]Copy successful.[/]");
         }
         else
@@ -79,6 +83,7 @@ public static class NodeDownloadingService
                     : $"[gray]The installed Node version could not be determined; re-copying Node {version} into the env...[/]");
                 RemoveNodeDistribution(extractedNode, envDir);
                 CopyFilesRecursively(extractedNode, envDir);
+                EnsureUnixExecutableBits(envDir);
                 AnsiConsole.MarkupLine("[green]Copy successful.[/]");
             }
         }
@@ -256,6 +261,28 @@ public static class NodeDownloadingService
     }
 
     /// <summary>
+    /// Returns the newest stable (official, non-RC) Node.js release, e.g. "26.6.0".
+    /// Throws InvalidOperationException when the nodejs.org index cannot be reached.
+    /// </summary>
+    public static async Task<string> GetLatestStableNodeVersionAsync()
+    {
+        List<string> versions = await GetAvailableVersionsAsync();
+        string? best = null;
+        foreach (string v in versions)
+        {
+            if (v.Length <= 1 || v[0] != 'v')
+                continue;
+            string candidate = v[1..];
+            if (candidate.Contains('-'))
+                continue; // official releases only
+            if (best == null || CompareVersions(candidate, best) > 0)
+                best = candidate;
+        }
+
+        return best ?? throw new InvalidOperationException("The nodejs.org version index lists no stable releases.");
+    }
+
+    /// <summary>
     /// A spec is partial (resolve to newest matching release) when it is
     /// "major" or "major.minor" with numeric parts; anything else is exact.
     /// </summary>
@@ -408,27 +435,92 @@ public static class NodeDownloadingService
         return Convert.ToHexString(SHA256.HashData(fs)).ToLowerInvariant();
     }
 
-    static string GetPlatformTag(string version)
+    /// <summary>
+    /// The nodejs.org distribution tag and archive extension for this platform.
+    /// Windows ships .zip archives; Linux and macOS ship .tar.xz.
+    /// </summary>
+    static (string Tag, string ArchiveExtension) GetPlatformPackage(string version)
     {
-        if (!OperatingSystem.IsWindows())
-            throw new NotSupportedException("nem currently only supports downloading Node for Windows.");
+        string platform;
+        string arch;
+        string extension;
+        if (OperatingSystem.IsWindows())
+        {
+            if (RuntimeInformation.ProcessArchitecture == Architecture.Arm64)
+                throw new NotSupportedException("ARM64 Windows is not supported by nem yet.");
+            platform = "win";
+            arch = Environment.Is64BitProcess ? "x64" : "x86";
+            extension = "zip";
+        }
+        else if (OperatingSystem.IsLinux())
+        {
+            platform = "linux";
+            arch = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "arm64" : "x64";
+            extension = "tar.xz";
+        }
+        else if (OperatingSystem.IsMacOS())
+        {
+            platform = "darwin";
+            arch = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "arm64" : "x64";
+            extension = "tar.xz";
+        }
+        else
+        {
+            throw new NotSupportedException("nem does not support downloading Node for this operating system.");
+        }
+        return ($"node-v{version}-{platform}-{arch}", extension);
+    }
 
-        if (RuntimeInformation.ProcessArchitecture == Architecture.Arm64)
-            throw new NotSupportedException("ARM64 Windows is not supported by nem yet.");
+    /// <summary>
+    /// Extracts a .tar.xz archive with the system 'tar' (tar auto-detects xz).
+    /// </summary>
+    static void ExtractWithTar(string archivePath, string targetDir)
+    {
+        var psi = new ProcessStartInfo("tar")
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        psi.ArgumentList.Add("-xf");
+        psi.ArgumentList.Add(archivePath);
+        psi.ArgumentList.Add("-C");
+        psi.ArgumentList.Add(targetDir);
 
-        string arch = Environment.Is64BitProcess ? "x64" : "x86";
-        return $"node-v{version}-win-{arch}";
+        using var process = Process.Start(psi) ?? throw new IOException("Could not start the 'tar' process.");
+        string stderr = process.StandardError.ReadToEnd();
+        process.StandardOutput.ReadToEnd();
+        process.WaitForExit();
+        if (process.ExitCode != 0)
+            throw new IOException($"Failed to extract {Path.GetFileName(archivePath)} with 'tar': {stderr.Trim()}");
+    }
+
+    /// <summary>
+    /// Restores the executable bit on the env's bin directory (Unix). File copies
+    /// of the Node distribution (node, npm, npx, ...) would otherwise lose their
+    /// executable bit, and the symlinks are flattened to regular files.
+    /// </summary>
+    static void EnsureUnixExecutableBits(string envDir)
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+
+        string binDir = NodeEnvLayout.Create(envDir).BinDir;
+        if (!Directory.Exists(binDir))
+            return;
+
+        UnixFileMode executable = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+            | UnixFileMode.GroupRead | UnixFileMode.GroupExecute
+            | UnixFileMode.OtherRead | UnixFileMode.OtherExecute;
+        foreach (string file in Directory.EnumerateFiles(binDir))
+            File.SetUnixFileMode(file, executable);
     }
 
     /// <summary>
     /// node.exe (Windows) or bin/node (Unix) inside the env directory.
     /// </summary>
-    public static string PrimaryNodeBinary(string envDir)
-    {
-        return OperatingSystem.IsWindows()
-            ? Path.Combine(envDir, "node.exe")
-            : Path.Combine(envDir, "bin", "node");
-    }
+    public static string PrimaryNodeBinary(string envDir) =>
+        NodeEnvLayout.Create(envDir).NodeBinary;
 
     static void CopyFilesRecursively(string sourcePath, string targetPath)
     {

@@ -125,7 +125,7 @@ public static class AuditService
     /// </summary>
     private static string? RunAuditScript(string envDir, string modulesRoot, string registry)
     {
-        string node = OperatingSystem.IsWindows() ? Path.Combine(envDir, "node.exe") : Path.Combine(envDir, "node");
+        string node = NodeEnvLayout.Create(envDir).NodeBinary;
         if (!File.Exists(node))
             node = "node";
 

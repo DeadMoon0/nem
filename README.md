@@ -25,11 +25,11 @@ No installation pollution. No "works on my machine" surprises. Everyone on the t
 # from a published feed
 dotnet tool install -g nem
 
-# once, on Windows: adds the nem proxy directory to your machine PATH
+# once: add the nem proxy directory to your PATH
 nem setup
 ```
 
-`nem setup` puts `%APPDATA%\nem\proxy` on your PATH. Every tool that belongs to a nem env gets a small proxy script in that directory, so tools can be invoked from any folder. (On Unix you just add `%APPDATA%\nem\proxy` to your PATH yourself.)
+`nem setup` puts the nem proxy directory (`%APPDATA%\nem\proxy` on Windows, `~/.config/nem/proxy` on Unix) on your PATH. Every tool that belongs to a nem env gets a small proxy script in that directory, so tools can be invoked from any folder. On Windows this patches the machine PATH (one elevated run is enough for everyone on the box); on Unix it appends an `export PATH=...` line to your shell rc files (`~/.profile`, plus `~/.bashrc` / `~/.zshrc` / `~/.zprofile` when they exist), so just run it once per user.
 
 ## Usage
 
@@ -123,19 +123,33 @@ $ nem run ng serve
 # falls back to the system tool of the same name.
 ```
 
-### Update the Node version
+### Update the env
 ```bash
-$ nem update [nodeVersion] [path]
+$ nem update [what] [path] [-t|--tools]
 
 $ nem update
-# Shows the declared and the actually installed Node version.
+# In an interactive terminal: shows a table of the Node version and all
+# tools (declared / installed / newest supported) and asks for each item
+# that has an update. Outside a terminal (CI, scripts): prints the same
+# table plus the exact commands to apply the updates, and changes nothing.
 
 $ nem update 20
 # Resolves '20' to the newest matching release, updates nem.json and
-# installs it into .nenv.
+# installs it into .nenv. Tools keep their versions, unless you add
+# --tools (or answer the interactive question) so they are updated to the
+# newest versions the new Node supports.
 
 $ nem update 18.12.0
 # Switches the env to exactly Node.js 18.12.0.
+
+$ nem update typescript
+# Updates just one tool to the newest version the env's Node supports
+# (also: 'typescript@5.6.3' for an exact version, '@angular/cli' for a
+# scoped name).
+
+$ nem update all
+# Node to the newest stable release, and every tool to the newest version
+# that release supports.
 ```
 
 ### Share with your team
@@ -166,10 +180,14 @@ $ nem install
 
 **2. `.nenv/` folder** — The isolated environment
 ```
-.nenv/
-  node.exe, npm(.cmd/.ps1), npx(...)   # the Node distribution (flat copy)
+.nenv/                                  # on Windows (flat copy of the dist)
+  node.exe, npm(.cmd/.ps1), npx(...)   # the Node distribution
   node_modules/<package>               # npm-installed env tools
   <tool>(.cmd/.ps1)                    # npm shims for the env tools
+
+.nenv/                                  # on Unix (npm --prefix layout)
+  bin/node, bin/npm, bin/<tool>         # runtime + shims
+  lib/node_modules/<package>            # npm-installed env tools
 ```
 
 **3. Proxies** — Transparent routing
@@ -205,11 +223,13 @@ nem tool add @angular/cli   (env NodeVersion = 18.12.0)
 An explicit `@version` or dist-tag is used as-is (validated against the registry).
 
 ### Caches
+The system directory is `%APPDATA%\nem\` on Windows and `~/.config/nem/` on Unix.
+
 | Path | Content |
 | --- | --- |
-| `%APPDATA%\nem\download\` | Node zip downloads (kept for reuse) |
-| `%APPDATA%\nem\extract\` | Extracted Node distributions |
-| `%APPDATA%\nem\proxy\` | Global tool proxies (on your PATH) |
+| `...\download\` | Node distribution downloads (kept for reuse) |
+| `...\extract\` | Extracted Node distributions |
+| `...\proxy\` | Global tool proxies (on your PATH) |
 
 ---
 

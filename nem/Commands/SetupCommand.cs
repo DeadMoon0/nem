@@ -3,7 +3,9 @@ using nem.Services;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.Versioning;
 using System.Linq;
 using System.Threading;
@@ -18,13 +20,7 @@ internal class SetupCommand : AsyncCommand
         await Task.CompletedTask;
 
         if (!OperatingSystem.IsWindows())
-        {
-            // nem setup is only needed on Windows (it patches the machine PATH).
-            IOService.EnsureSystemDir();
-            AnsiConsole.MarkupLine("[yellow]nem setup only patches the PATH on Windows. Add the following directory to your PATH manually:[/]");
-            AnsiConsole.MarkupLine($"  {IOPathManager.System.ProxyDirPath}");
-            return 0;
-        }
+            return SetupUnixShellPath();
 
         if (!IsRunAsAdmin())
         {
@@ -79,6 +75,47 @@ internal class SetupCommand : AsyncCommand
         Environment.SetEnvironmentVariable("Path", string.Join(";", entries), EnvironmentVariableTarget.Machine);
 
         AnsiConsole.MarkupLine("[green]Successfully updated the machine PATH.[/]");
+        AnsiConsole.MarkupLine("[yellow]Please restart your terminal for the changes to take effect.[/]");
+        return 0;
+    }
+
+    /// <summary>
+    /// Unix: no elevation is available or needed, so the proxy directory is
+    /// appended to the user's shell rc files instead of a system PATH variable.
+    /// </summary>
+    static int SetupUnixShellPath()
+    {
+        IOService.EnsureSystemDir();
+        string proxyDir = IOPathManager.System.ProxyDirPath;
+        string marker = "# nem: prepend the nem proxy directory to the PATH";
+        string line = $"export PATH=\"{proxyDir}:$PATH\"";
+
+        string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var rcFiles = new List<string> { Path.Combine(home, ".profile") };
+        foreach (string name in new[] { ".bashrc", ".zshrc", ".zprofile" })
+        {
+            string rcFile = Path.Combine(home, name);
+            if (File.Exists(rcFile))
+                rcFiles.Add(rcFile);
+        }
+
+        bool changed = false;
+        foreach (string rcFile in rcFiles)
+        {
+            if (File.Exists(rcFile) && File.ReadAllText(rcFile).Contains(marker))
+                continue; // already set up
+
+            string content = File.Exists(rcFile) ? File.ReadAllText(rcFile).TrimEnd('\n', '\r') : "";
+            if (content.Length > 0)
+                content += "\n";
+            File.WriteAllText(rcFile, content + marker + "\n" + line + "\n");
+            AnsiConsole.MarkupLine($"[green]Updated {rcFile}[/]");
+            changed = true;
+        }
+
+        AnsiConsole.MarkupLine($"[gray]nem proxies: {proxyDir}[/]");
+        if (!changed)
+            AnsiConsole.MarkupLine("[green]Your shell PATH is already set up.[/]");
         AnsiConsole.MarkupLine("[yellow]Please restart your terminal for the changes to take effect.[/]");
         return 0;
     }

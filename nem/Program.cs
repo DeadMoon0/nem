@@ -47,7 +47,7 @@ internal class Program
                 .WithDescription("Adds the nem proxy directory to your PATH. Only needs to be run once.");
 
             config.AddCommand<UpdateCommand>("update")
-                .WithDescription("Changes the Node version of an existing env and installs it.");
+                .WithDescription("Updates the env: a Node version ('22'), a tool ('typescript', '@angular/cli@22'), or 'all'. Without arguments it reviews the available updates interactively.");
 
             config.AddBranch("tool", c =>
             {

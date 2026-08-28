@@ -172,7 +172,14 @@ public static class ToolService
         foreach (var tool in config.Tools)
         {
             if (IsToolInstalled(envDir, tool.ToolName))
-                continue;
+            {
+                // Re-install when what is on disk no longer matches the declared
+                // version (e.g. after 'nem update' changed nem.json).
+                string? installedVersion = GetInstalledToolVersion(envDir, tool.ToolName);
+                if (installedVersion != null &&
+                    string.Equals(installedVersion, tool.ToolVersion, StringComparison.OrdinalIgnoreCase))
+                    continue;
+            }
             anythingMissing = true;
             AnsiConsole.MarkupLine($"Installing [green]{tool.ToolName}@{tool.ToolVersion}[/] ...");
             // --no-audit: npm's inline audit summary is re-emitted (with details) by
@@ -235,15 +242,39 @@ public static class ToolService
     }
 
     /// <summary>
+    /// Validates npm package names before they are used to build registry URLs.
+    /// </summary>
+    public static bool IsValidPackageName(string name) =>
+        !string.IsNullOrWhiteSpace(name) && ValidPackageName.IsMatch(name);
+
+    /// <summary>
     /// The global modules root of the env (where 'npm -g' installs packages).
     /// </summary>
     public static string ToolModulesRoot(string envDir) =>
-        OperatingSystem.IsWindows()
-            ? Path.Combine(envDir, "node_modules")
-            : Path.Combine(envDir, "lib", "node_modules");
+        NodeEnvLayout.Create(envDir).ModulesRoot;
 
     public static bool IsToolInstalled(string envDir, string packageName) =>
         File.Exists(Path.Combine(ToolModulesRoot(envDir), packageName, "package.json"));
+
+    /// <summary>
+    /// The version of the package currently on disk in the env, or null.
+    /// </summary>
+    public static string? GetInstalledToolVersion(string envDir, string packageName)
+    {
+        string packageJson = Path.Combine(ToolModulesRoot(envDir), packageName, "package.json");
+        if (!File.Exists(packageJson))
+            return null;
+        try
+        {
+            var doc = JObject.Parse(File.ReadAllText(packageJson));
+            string? version = doc["version"]?.ToString();
+            return string.IsNullOrWhiteSpace(version) ? null : version;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
 
     /// <summary>
     /// Reads the bin entries of an installed package; falls back to a name guess.
@@ -261,7 +292,8 @@ public static class ToolService
                 if (bin != null)
                 {
                     if (bin.Type == JTokenType.String && !string.IsNullOrWhiteSpace(bin.ToString()))
-                        bins.Add(Path.GetFileName(bin.ToString()));
+                        // A string bin value means 'the executable is named after the package'.
+                        bins.Add(DefaultBinName(packageName));
                     else if (bin.Type == JTokenType.Object)
                         bins.AddRange(((JObject)bin).Properties().Select(p => p.Name));
                 }
@@ -298,7 +330,8 @@ public static class ToolService
     private static int RunNpm(string envDir, string[] args, bool capture, out string? stdout)
     {
         stdout = null;
-        string npm = OperatingSystem.IsWindows() ? Path.Combine(envDir, "npm.cmd") : Path.Combine(envDir, "npm");
+        NodeEnvLayout layout = NodeEnvLayout.Create(envDir);
+        string npm = layout.NpmEntry;
         if (!File.Exists(npm))
         {
             AnsiConsole.MarkupLine($"[red]npm not found in the env at {Markup.Escape(npm)}. Run [green]nem install[/] first.[/]");
@@ -321,8 +354,7 @@ public static class ToolService
             psi.ArgumentList.Add(arg);
 
         // Make sure the env's node is first on PATH for anything npm spawns.
-        string pathVar = Environment.GetEnvironmentVariable("PATH") ?? "";
-        psi.Environment["PATH"] = envDir + Path.PathSeparator + pathVar;
+        psi.Environment["PATH"] = layout.BuildPathVariable(Environment.GetEnvironmentVariable("PATH"));
         psi.Environment["npm_config_update_notifier"] = "false";
 
         using var process = Process.Start(psi);
@@ -343,11 +375,11 @@ public static class ToolService
     /// Returns the resolved version or null (with <paramref name="error"/> set to a
     /// reason when the resolver reported one).
     /// </summary>
-    private static string? ResolveVersion(string packageName, string? range, string nodeVersion, string envDir, out string? error)
+    public static string? ResolveVersion(string packageName, string? range, string nodeVersion, string envDir, out string? error)
     {
         error = null;
         // Prefer the env's node (it always bundles npm's semver); fall back to a node on PATH.
-        string node = Path.Combine(envDir, "node.exe");
+        string node = NodeEnvLayout.Create(envDir).NodeBinary;
         if (!File.Exists(node))
             node = "node";
 

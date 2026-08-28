@@ -151,23 +151,13 @@ public static class ProxyService
 
         if (envDir != null)
         {
-            // Prepend the env (and its tool bin dir) to PATH for the child process.
-            var pathEntries = new List<string>();
-            if (OperatingSystem.IsWindows())
-                pathEntries.Add(envDir);
-            else
-                pathEntries.Add(Path.Combine(envDir, "bin"));
-            pathEntries.Add(envDir);
-            pathEntries.Add(Environment.GetEnvironmentVariable("PATH") ?? "");
+            NodeEnvLayout layout = NodeEnvLayout.Create(envDir);
 
-            string separator = OperatingSystem.IsWindows() ? ";" : ":";
-            psi.Environment["PATH"] = string.Join(separator, pathEntries.Distinct(StringComparer.OrdinalIgnoreCase));
+            // Prepend the env (and its tool bin dir) to PATH for the child process.
+            psi.Environment["PATH"] = layout.BuildPathVariable(Environment.GetEnvironmentVariable("PATH"));
 
             // Let node require() find globally installed env packages.
-            string globalModules = OperatingSystem.IsWindows()
-                ? Path.Combine(envDir, "node_modules")
-                : Path.Combine(envDir, "lib", "node_modules");
-            psi.Environment["NODE_PATH"] = globalModules;
+            psi.Environment["NODE_PATH"] = layout.ModulesRoot;
         }
 
         try
@@ -188,11 +178,12 @@ public static class ProxyService
     /// </summary>
     public static string? ResolveToolInEnv(string envDir, string toolName)
     {
-        string[] roots = OperatingSystem.IsWindows()
-            ? [envDir, Path.Combine(envDir, "bin")]
-            : [Path.Combine(envDir, "bin"), envDir];
+        NodeEnvLayout layout = NodeEnvLayout.Create(envDir);
+        string[] roots = layout.IsWindows
+            ? [layout.EnvDir, Path.Combine(layout.EnvDir, "bin")]
+            : [layout.BinDir, layout.EnvDir];
 
-        string[] extensions = OperatingSystem.IsWindows()
+        string[] extensions = layout.IsWindows
             ? [".exe", ".cmd", ".bat", ""]
             : [""];
 
