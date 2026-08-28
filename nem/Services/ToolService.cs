@@ -39,15 +39,15 @@ public static class ToolService
     /// Lazily loads the shipped resolver script (Resources/ResolveVersion.js), which
     /// runs under the env's node so it can use npm's bundled semver implementation.
     /// </summary>
-    private static string LoadResolveScript()
+    private static string LoadResolveScript() => _resolveScript ??= LoadResourceScript("ResolveVersion.js");
+
+    /// <summary>
+    /// Reads a shipped script from the Resources folder next to the assembly.
+    /// </summary>
+    internal static string LoadResourceScript(string fileName)
     {
-        if (_resolveScript == null)
-        {
-            string dir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
-            string scriptPath = Path.Combine(dir, "Resources", "ResolveVersion.js");
-            _resolveScript = File.ReadAllText(scriptPath);
-        }
-        return _resolveScript;
+        string dir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
+        return File.ReadAllText(Path.Combine(dir, "Resources", fileName));
     }
 
     private static string? _resolveScript;
@@ -128,7 +128,7 @@ public static class ToolService
             return 0;
 
         List<string> bins = ReadToolBins(envDir, packageName);
-        int exit = RunNpm(envDir, new[] { "uninstall", "-g", packageName }, capture: false);
+        int exit = RunNpm(envDir, new[] { "uninstall", "-g", packageName }, capture: false, out _);
         foreach (string bin in bins)
             DeleteProxy(bin);
 
@@ -171,7 +171,9 @@ public static class ToolService
                 continue;
             anythingMissing = true;
             AnsiConsole.MarkupLine($"Installing [green]{tool.ToolName}@{tool.ToolVersion}[/] ...");
-            int result = RunNpm(envDir, new[] { "install", "-g", $"{tool.ToolName}@{tool.ToolVersion}" }, capture: false);
+            // --no-audit: npm's inline audit summary is re-emitted (with details) by
+            // AuditService after the install, so it stays the single source of truth.
+            int result = RunNpm(envDir, new[] { "install", "-g", "--no-audit", $"{tool.ToolName}@{tool.ToolVersion}" }, capture: false, out _);
             if (result != 0)
                 exit = result;
         }
@@ -276,11 +278,22 @@ public static class ToolService
         packageName.Contains('/') ? packageName[(packageName.LastIndexOf('/') + 1)..] : packageName;
 
     /// <summary>
+    /// Runs the env's npm and returns its (trimmed) stdout, or null on failure.
+    /// </summary>
+    internal static string? RunNpmCapture(string envDir, string[] args)
+    {
+        int exit = RunNpm(envDir, args, capture: true, out string? stdout);
+        string? result = stdout?.Trim();
+        return exit == 0 && !string.IsNullOrWhiteSpace(result) ? result : null;
+    }
+
+    /// <summary>
     /// Runs the env's npm with --prefix <envDir> (the env's node install IS the npm
     /// prefix; the flag is required on Windows to make npm create the bin shims).
     /// </summary>
-    private static int RunNpm(string envDir, string[] args, bool capture)
+    private static int RunNpm(string envDir, string[] args, bool capture, out string? stdout)
     {
+        stdout = null;
         string npm = OperatingSystem.IsWindows() ? Path.Combine(envDir, "npm.cmd") : Path.Combine(envDir, "npm");
         if (!File.Exists(npm))
         {
@@ -314,8 +327,8 @@ public static class ToolService
 
         if (capture)
         {
-            // stdout is piped and discarded; stderr stays inherited so problems are visible.
-            process.StandardOutput.ReadToEnd();
+            // stderr stays inherited so problems are visible.
+            stdout = process.StandardOutput.ReadToEnd();
         }
         process.WaitForExit();
         return process.ExitCode;

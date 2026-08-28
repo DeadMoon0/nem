@@ -53,6 +53,9 @@
 	  <None Update="Resources\ResolveVersion.js">
     <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
   </None>
+  <None Update="Resources\AuditEnv.js">
+    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+  </None>
   <None Update="ProxyFiles\NAME">
 	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 	  </None>

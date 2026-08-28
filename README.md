@@ -84,6 +84,19 @@ $ nem install --clean [path]
 
 `nem install` is idempotent — re-run it any time; only what is missing gets installed.
 
+### Security audit
+
+After installing, nem audits **every package** in the env (including
+transitive dependencies of your tools) against the npm registry's advisory
+database and prints the result:
+
+- a green confirmation when nothing is known to be vulnerable,
+- a table of affected packages, installed versions, severity and advisory
+  links when there are findings (sorted critical first).
+
+The audit is best effort — if the registry cannot be reached, nem notes it
+and continues; it never fails the install.
+
 ### Use tools
 ```bash
 $ ng serve
@@ -153,8 +166,9 @@ Proxies exist as `ng`, `ng.bat` (cmd) and `ng.ps1` (PowerShell). `nem install` r
 ```
 nem install
   -> for each missing tool in nem.json:
-       npm install -g <tool>@<version> --prefix .nenv
+       npm install -g --no-audit <tool>@<version> --prefix .nenv
   -> reads each package's "bin" entries, creates a proxy per binary
+  -> audits the whole tree against the npm advisory database
 ```
 npm handles dependency resolution; the packages and their shims land in `.nenv`. Proxies are derived from the installed `package.json` files, so every binary a tool ships (e.g. `ts-node` also ships `ts-node-esm`, `ts-script`, ...) gets one.
 

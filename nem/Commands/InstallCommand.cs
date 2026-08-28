@@ -54,6 +54,10 @@ internal class InstallCommand : AsyncCommand<InstallCommandSettings>
 
         ProxyService.TryInstallTool("npm");
         ProxyService.TryInstallTool("npx");
+
+        if (exit == 0)
+            AuditService.AuditAndReport(envDir);
+
         return exit;
     }
 }
