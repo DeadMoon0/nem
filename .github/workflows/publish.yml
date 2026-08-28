@@ -36,6 +36,9 @@ jobs:
       - name: Build
         run: dotnet build -c Release
 
+      - name: Run unit tests
+        run: dotnet test -c Release --no-build
+
       # Pack only the tool project; its project reference (nem.Common) is
       # built and bundled into the package, not published as a dependency.
       - name: Pack

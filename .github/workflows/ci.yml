@@ -35,9 +35,3 @@ jobs:
 
       - name: Smoke test the CLI
         run: dotnet run --project nem -c Release -- --help
-
-      - name: Upload package
-        uses: actions/upload-artifact@v4
-        with:
-          name: nem-${{ matrix.os }}
-          path: artifacts/*.nupkg
