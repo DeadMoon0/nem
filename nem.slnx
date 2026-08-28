@@ -1,4 +1,5 @@
 <Solution>
   <Project Path="nem.Common/nem.Common.csproj" Id="b19814e2-6b9b-46cb-9161-99f3292c84ba" />
   <Project Path="nem/nem.csproj" />
+  <Project Path="nem.Tests/nem.Tests.csproj" />
 </Solution>

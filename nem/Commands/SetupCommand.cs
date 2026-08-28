@@ -87,19 +87,39 @@ internal class SetupCommand : AsyncCommand
     {
         IOService.EnsureSystemDir();
         string proxyDir = IOPathManager.System.ProxyDirPath;
+        string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+        List<string> updated = UpdateShellRcFiles(home, proxyDir);
+        foreach (string rcFile in updated)
+            AnsiConsole.MarkupLine($"[green]Updated {rcFile}[/]");
+
+        AnsiConsole.MarkupLine($"[gray]nem proxies: {proxyDir}[/]");
+        if (updated.Count == 0)
+            AnsiConsole.MarkupLine("[green]Your shell PATH is already set up.[/]");
+        AnsiConsole.MarkupLine("[yellow]Please restart your terminal for the changes to take effect.[/]");
+        return 0;
+    }
+
+    /// <summary>
+    /// Appends the marker-guarded <c>export PATH=...&lt;proxyDir&gt;:$PATH</c>
+    /// line to <c>.profile</c> (always) and to <c>.bashrc</c>/<c>.zshrc</c>/
+    /// <c>.zprofile</c> if they exist. Idempotent: files already carrying the
+    /// marker are skipped. Returns the files that were written.
+    /// </summary>
+    internal static List<string> UpdateShellRcFiles(string homeDir, string proxyDir)
+    {
         string marker = "# nem: prepend the nem proxy directory to the PATH";
         string line = $"export PATH=\"{proxyDir}:$PATH\"";
 
-        string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var rcFiles = new List<string> { Path.Combine(home, ".profile") };
+        var rcFiles = new List<string> { Path.Combine(homeDir, ".profile") };
         foreach (string name in new[] { ".bashrc", ".zshrc", ".zprofile" })
         {
-            string rcFile = Path.Combine(home, name);
+            string rcFile = Path.Combine(homeDir, name);
             if (File.Exists(rcFile))
                 rcFiles.Add(rcFile);
         }
 
-        bool changed = false;
+        var updated = new List<string>();
         foreach (string rcFile in rcFiles)
         {
             if (File.Exists(rcFile) && File.ReadAllText(rcFile).Contains(marker))
@@ -109,15 +129,9 @@ internal class SetupCommand : AsyncCommand
             if (content.Length > 0)
                 content += "\n";
             File.WriteAllText(rcFile, content + marker + "\n" + line + "\n");
-            AnsiConsole.MarkupLine($"[green]Updated {rcFile}[/]");
-            changed = true;
+            updated.Add(rcFile);
         }
-
-        AnsiConsole.MarkupLine($"[gray]nem proxies: {proxyDir}[/]");
-        if (!changed)
-            AnsiConsole.MarkupLine("[green]Your shell PATH is already set up.[/]");
-        AnsiConsole.MarkupLine("[yellow]Please restart your terminal for the changes to take effect.[/]");
-        return 0;
+        return updated;
     }
 
     [SupportedOSPlatform("windows")]

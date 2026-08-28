@@ -30,6 +30,15 @@ public sealed class NodeEnvLayout
     /// <summary>Creates the layout for the current OS.</summary>
     public static NodeEnvLayout Create(string envDir) => new(envDir, OperatingSystem.IsWindows());
 
+    /// <summary>
+    /// Creates the layout for the env directory at <paramref name="envDir"/> for
+    /// a specific target platform (useful for cross-platform checks and tests).
+    /// </summary>
+    public static NodeEnvLayout Create(string envDir, bool isWindows)
+    {
+        return new NodeEnvLayout(envDir, isWindows);
+    }
+
     /// <summary>The env root (.nenv directory).</summary>
     public string EnvDir { get; }
 

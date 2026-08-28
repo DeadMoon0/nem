@@ -213,23 +213,10 @@ public static class NodeDownloadingService
         if (IsPartialSpec(input))
         {
             List<string> versions = await GetAvailableVersionsAsync();
-            string prefix = input + ".";
-            string? best = null;
-            foreach (string v in versions)
-            {
-                if (v.Length <= 1 || v[0] != 'v')
-                    continue;
-                string candidate = v[1..];
-                if (candidate.Contains('-'))
-                    continue; // official releases only
-                if (candidate.StartsWith(prefix, System.StringComparison.Ordinal) &&
-                    (best == null || CompareVersions(candidate, best) > 0))
-                    best = candidate;
-            }
-
-            if (best == null)
+            string? newest = NewestStableVersion(versions, input);
+            if (newest == null)
                 throw new InvalidOperationException($"No Node.js release matches '{spec.Trim()}' (checked https://nodejs.org/dist). See https://nodejs.org/en/download for available versions.");
-            return best;
+            return newest;
         }
 
         // Full spec: it must exist.
@@ -267,6 +254,19 @@ public static class NodeDownloadingService
     public static async Task<string> GetLatestStableNodeVersionAsync()
     {
         List<string> versions = await GetAvailableVersionsAsync();
+        return NewestStableVersion(versions)
+            ?? throw new InvalidOperationException("The nodejs.org version index lists no stable releases.");
+    }
+
+    /// <summary>
+    /// The newest stable release (no leading 'v') from a nodejs.org tag list.
+    /// Tags with a '-' (nightly/beta/rc) are skipped; when <paramref name="prefix"/>
+    /// is given, only releases starting with that version prefix qualify ("22" ->
+    /// 22.x). Returns null when nothing qualifies.
+    /// </summary>
+    internal static string? NewestStableVersion(IEnumerable<string> versions, string? prefix = null)
+    {
+        string? requiredPrefix = prefix == null ? null : NormalizeVersion(prefix) + ".";
         string? best = null;
         foreach (string v in versions)
         {
@@ -275,18 +275,19 @@ public static class NodeDownloadingService
             string candidate = v[1..];
             if (candidate.Contains('-'))
                 continue; // official releases only
+            if (requiredPrefix != null && !candidate.StartsWith(requiredPrefix, StringComparison.Ordinal))
+                continue;
             if (best == null || CompareVersions(candidate, best) > 0)
                 best = candidate;
         }
-
-        return best ?? throw new InvalidOperationException("The nodejs.org version index lists no stable releases.");
+        return best;
     }
 
     /// <summary>
     /// A spec is partial (resolve to newest matching release) when it is
     /// "major" or "major.minor" with numeric parts; anything else is exact.
     /// </summary>
-    static bool IsPartialSpec(string input)
+    internal static bool IsPartialSpec(string input)
     {
         string[] parts = input.Split('.');
         if (parts.Length > 2)
@@ -294,7 +295,7 @@ public static class NodeDownloadingService
         return parts.All(p => p.Length > 0 && p.All(char.IsDigit));
     }
 
-    static int CompareVersions(string a, string b)
+    internal static int CompareVersions(string a, string b)
     {
         int[] pa = a.Split('.').Select(int.Parse).ToArray();
         int[] pb = b.Split('.').Select(int.Parse).ToArray();
@@ -412,7 +413,7 @@ public static class NodeDownloadingService
         }
     }
 
-    static string? ParseSha256(string shasumsText, string fileName)
+    internal static string? ParseSha256(string shasumsText, string fileName)
     {
         foreach (string line in shasumsText.Split('\n'))
         {
@@ -439,29 +440,45 @@ public static class NodeDownloadingService
     /// The nodejs.org distribution tag and archive extension for this platform.
     /// Windows ships .zip archives; Linux and macOS ship .tar.xz.
     /// </summary>
-    static (string Tag, string ArchiveExtension) GetPlatformPackage(string version)
+    static (string Tag, string ArchiveExtension) GetPlatformPackage(string version) =>
+        GetPlatformPackage(
+            version,
+            RuntimeInformation.ProcessArchitecture,
+            OperatingSystem.IsWindows(),
+            OperatingSystem.IsLinux(),
+            OperatingSystem.IsMacOS());
+
+    /// <summary>
+    /// Maps a version plus platform facts to the nodejs.org dist package name.
+    /// </summary>
+    internal static (string Tag, string ArchiveExtension) GetPlatformPackage(
+        string version,
+        Architecture processArchitecture,
+        bool isWindows,
+        bool isLinux,
+        bool isMacOS)
     {
         string platform;
         string arch;
         string extension;
-        if (OperatingSystem.IsWindows())
+        if (isWindows)
         {
-            if (RuntimeInformation.ProcessArchitecture == Architecture.Arm64)
+            if (processArchitecture == Architecture.Arm64)
                 throw new NotSupportedException("ARM64 Windows is not supported by nem yet.");
             platform = "win";
             arch = Environment.Is64BitProcess ? "x64" : "x86";
             extension = "zip";
         }
-        else if (OperatingSystem.IsLinux())
+        else if (isLinux)
         {
             platform = "linux";
-            arch = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "arm64" : "x64";
+            arch = processArchitecture == Architecture.Arm64 ? "arm64" : "x64";
             extension = "tar.xz";
         }
-        else if (OperatingSystem.IsMacOS())
+        else if (isMacOS)
         {
             platform = "darwin";
-            arch = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "arm64" : "x64";
+            arch = processArchitecture == Architecture.Arm64 ? "arm64" : "x64";
             extension = "tar.xz";
         }
         else

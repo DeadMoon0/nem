@@ -16,25 +16,32 @@ public static class ProxyService
     /// </summary>
     public static bool TryInstallTool(string toolName)
     {
+        string nemDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
+        return TryInstallTool(toolName, Path.Combine(nemDir, "ProxyFiles"), IOPathManager.System.ProxyDirPath);
+    }
+
+    /// <summary>
+    /// Copies the proxy script templates from <paramref name="proxyFilesDir"/>
+    /// (NAME, NAME.bat, NAME.ps1) into <paramref name="targetDir"/> under the tool
+    /// name. Returns true when at least one proxy file was written.
+    /// </summary>
+    public static bool TryInstallTool(string toolName, string proxyFilesDir, string targetDir)
+    {
         try
         {
-            var nemDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
-            var proxyFilesDir = Path.Combine(nemDir, "ProxyFiles");
-            var systemProxyDir = IOPathManager.System.ProxyDirPath;
-
-            if (!Directory.Exists(systemProxyDir))
-                Directory.CreateDirectory(systemProxyDir);
+            if (!Directory.Exists(targetDir))
+                Directory.CreateDirectory(targetDir);
 
             bool created = false;
 
             // Copy .bat proxy (Windows cmd)
-            created |= TryCopyTemplate("NAME.bat", Path.Combine(systemProxyDir, toolName + ".bat"), proxyFilesDir, systemProxyDir);
+            created |= TryCopyTemplate("NAME.bat", Path.Combine(targetDir, toolName + ".bat"), proxyFilesDir, targetDir);
 
             // Copy .ps1 proxy (Windows PowerShell)
-            created |= TryCopyTemplate("NAME.ps1", Path.Combine(systemProxyDir, toolName + ".ps1"), proxyFilesDir, systemProxyDir);
+            created |= TryCopyTemplate("NAME.ps1", Path.Combine(targetDir, toolName + ".ps1"), proxyFilesDir, targetDir);
 
             // Copy extensionless proxy (Unix / bash)
-            created |= TryCopyTemplate("NAME", Path.Combine(systemProxyDir, toolName), proxyFilesDir, systemProxyDir);
+            created |= TryCopyTemplate("NAME", Path.Combine(targetDir, toolName), proxyFilesDir, targetDir);
 
             return created;
         }
@@ -69,7 +76,15 @@ public static class ProxyService
     /// </summary>
     public static void PruneStaleProxies(IEnumerable<string> keepNames)
     {
-        string proxyDir = IOPathManager.System.ProxyDirPath;
+        PruneStaleProxies(IOPathManager.System.ProxyDirPath, keepNames);
+    }
+
+    /// <summary>
+    /// Deletes proxy files in <paramref name="proxyDir"/> whose tool is not in
+    /// <paramref name="keepNames"/> (npm/npx are always kept).
+    /// </summary>
+    public static void PruneStaleProxies(string proxyDir, IEnumerable<string> keepNames)
+    {
         if (!Directory.Exists(proxyDir))
             return;
 

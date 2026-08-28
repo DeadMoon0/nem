@@ -25,7 +25,10 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Build (Release)
-        run: dotnet build -c Release
+        run: dotnet build nem.slnx -c Release
+
+      - name: Run unit tests
+        run: dotnet test nem.slnx -c Release --no-build
 
       - name: Pack
         run: dotnet pack nem/nem.csproj -c Release -o artifacts

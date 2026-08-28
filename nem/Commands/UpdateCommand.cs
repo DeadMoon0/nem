@@ -8,7 +8,6 @@ using System;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -32,11 +31,6 @@ internal class UpdateCommandSettings : CommandSettings
 
 internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
 {
-    // A bare Node version spec: "22", "22.0", "22.23.2", with an optional leading
-    // "v" and optional trailing ".". Anything else is treated as a tool package.
-    private static readonly Regex NodeVersionSpec =
-        new(@"^[vV]?\d+([.]\d+){0,2}\.?$", RegexOptions.Compiled);
-
     protected override async Task<int> ExecuteAsync(CommandContext context, UpdateCommandSettings settings, CancellationToken cancellationToken)
     {
         if (!IOService.EnsureSystemDir())
@@ -59,7 +53,7 @@ internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
             return await UpdateEverythingPromptedAsync(config, local, envDir, interactive);
         if (what.Equals("all", StringComparison.OrdinalIgnoreCase))
             return await UpdateEverythingAsync(config, local, envDir);
-        if (NodeVersionSpec.IsMatch(what))
+        if (NodeVersionSpec.IsNodeVersionSpec(what))
             return await UpdateNodeAsync(config, local, envDir, what, settings.Tools, interactive);
         return await UpdateToolAsync(config, local, envDir, what);
     }
@@ -72,7 +66,7 @@ internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
     static async Task<int> UpdateEverythingPromptedAsync(
         NemConfig config, IOPathManager.IOPathManagerLocal local, string envDir, bool interactive)
     {
-        UpdatePlan plan = await UpdatePlanner.CreateAsync(config, envDir);
+        UpdatePlan plan = await UpdatePlanner.Create().CreateAsync(config, envDir);
         RenderPlan(plan);
 
         if (!interactive)
@@ -104,7 +98,7 @@ internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
 
         // Tool "latest" versions depend on the Node version that will be in use.
         UpdatePlan toolPlan = nodeUpdated
-            ? await UpdatePlanner.CreateAsync(config, envDir, nodeReference: newNode)
+            ? await UpdatePlanner.Create().CreateAsync(config, envDir, nodeReference: newNode)
             : plan;
 
         bool toolsUpdated = false;

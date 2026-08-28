@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading.Tasks;
 using nem.Common.Models;
 
@@ -55,11 +54,83 @@ public sealed class UpdatePlan
 }
 
 /// <summary>
+/// Node version facts for an env: what is installed and what the newest stable
+/// nodejs.org release is.
+/// </summary>
+public interface INodeVersionSource
+{
+    /// <summary>The Node version installed in the env, or null.</summary>
+    string? GetInstalledNodeVersion(string envDir);
+
+    /// <summary>The newest stable Node release, or null when it cannot be determined.</summary>
+    Task<string?> GetLatestStableNodeVersionAsync();
+}
+
+/// <summary>
+/// Tool version facts for an env: what newest version each tool can resolve to
+/// and what is installed.
+/// </summary>
+public interface IToolVersionSource
+{
+    /// <summary>The newest resolvable version of a tool, or null (with <paramref name="error"/>).</summary>
+    string? ResolveLatestVersion(string packageName, string nodeVersion, string envDir, out string? error);
+
+    /// <summary>The version of a tool installed in the env, or null.</summary>
+    string? GetInstalledVersion(string envDir, string packageName);
+}
+
+/// <summary>
+/// <see cref="INodeVersionSource"/> backed by <see cref="NodeDownloadingService"/>.
+/// Degrades to null (instead of throwing) so planning works offline.
+/// </summary>
+public sealed class NodeVersionSource : INodeVersionSource
+{
+    public string? GetInstalledNodeVersion(string envDir) =>
+        NodeDownloadingService.GetInstalledNodeVersion(envDir);
+
+    public async Task<string?> GetLatestStableNodeVersionAsync()
+    {
+        try
+        {
+            return await NodeDownloadingService.GetLatestStableNodeVersionAsync();
+        }
+        catch (Exception)
+        {
+            return null; // offline or index unreachable: degrade to what is known
+        }
+    }
+}
+
+/// <summary>
+/// <see cref="IToolVersionSource"/> backed by <see cref="ToolService"/>.
+/// </summary>
+public sealed class ToolVersionSource : IToolVersionSource
+{
+    public string? ResolveLatestVersion(string packageName, string nodeVersion, string envDir, out string? error) =>
+        ToolService.ResolveVersion(packageName, range: null, nodeVersion, envDir, out error);
+
+    public string? GetInstalledVersion(string envDir, string packageName) =>
+        ToolService.GetInstalledToolVersion(envDir, packageName);
+}
+
+/// <summary>
 /// Figures out what 'nem update' would change. This is pure read-only planning:
 /// it resolves versions but never prints prompts, writes files, or installs.
 /// </summary>
-public static class UpdatePlanner
+public sealed class UpdatePlanner
 {
+    private readonly INodeVersionSource _nodeVersions;
+    private readonly IToolVersionSource _toolVersions;
+
+    public UpdatePlanner(INodeVersionSource nodeVersions, IToolVersionSource toolVersions)
+    {
+        _nodeVersions = nodeVersions;
+        _toolVersions = toolVersions;
+    }
+
+    /// <summary>A planner wired to the real Node and tool services.</summary>
+    public static UpdatePlanner Create() => new(new NodeVersionSource(), new ToolVersionSource());
+
     /// <summary>
     /// Plans an update for the env at envDir.
     /// </summary>
@@ -70,18 +141,10 @@ public static class UpdatePlanner
     /// against. Defaults to the declared one; pass the new Node version when the
     /// user already accepted a Node update so tool versions stay compatible.
     /// </param>
-    public static async Task<UpdatePlan> CreateAsync(NemConfig config, string envDir, string? nodeReference = null)
+    public async Task<UpdatePlan> CreateAsync(NemConfig config, string envDir, string? nodeReference = null)
     {
         string declaredNode = config.NodeVersion ?? "";
-        string? latestNode = null;
-        try
-        {
-            latestNode = await NodeDownloadingService.GetLatestStableNodeVersionAsync();
-        }
-        catch (Exception)
-        {
-            latestNode = null; // offline or index unreachable: degrade to what is known
-        }
+        string? latestNode = await _nodeVersions.GetLatestStableNodeVersionAsync();
 
         string reference = nodeReference ?? declaredNode;
         var tools = new List<ToolUpdateEntry>();
@@ -91,7 +154,7 @@ public static class UpdatePlanner
             string? error = null;
             try
             {
-                latest = ToolService.ResolveVersion(tool.ToolName, range: null, reference, envDir, out error);
+                latest = _toolVersions.ResolveLatestVersion(tool.ToolName, reference, envDir, out error);
             }
             catch (Exception e)
             {
@@ -102,7 +165,7 @@ public static class UpdatePlanner
             {
                 Name = tool.ToolName,
                 DeclaredVersion = tool.ToolVersion,
-                InstalledVersion = ToolService.GetInstalledToolVersion(envDir, tool.ToolName),
+                InstalledVersion = _toolVersions.GetInstalledVersion(envDir, tool.ToolName),
                 LatestVersion = latest,
                 Error = error,
             });
@@ -111,7 +174,7 @@ public static class UpdatePlanner
         return new UpdatePlan
         {
             DeclaredNodeVersion = declaredNode,
-            InstalledNodeVersion = NodeDownloadingService.GetInstalledNodeVersion(envDir),
+            InstalledNodeVersion = _nodeVersions.GetInstalledNodeVersion(envDir),
             LatestNodeVersion = latestNode,
             Tools = tools,
         };

@@ -50,6 +50,11 @@
 	</ItemGroup>
 
 	<ItemGroup>
+	  <!-- Lets the test project reach internal helpers without widening the CLI surface. -->
+	  <InternalsVisibleTo Include="nem.Tests" />
+	</ItemGroup>
+
+	<ItemGroup>
 	  <None Update="Resources\ResolveVersion.js">
     <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
   </None>

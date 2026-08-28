@@ -54,7 +54,7 @@ public static class IOService
         {
             string content = File.ReadAllText(gitIgnorePath);
             string prefix = content.Length == 0 ? "" : (content.EndsWith("\n") ? "" : "\n");
-            File.WriteAllText(gitIgnorePath, prefix + $"#nem\n/{entry}\n");
+            File.WriteAllText(gitIgnorePath, content + prefix + $"#nem\n/{entry}\n");
         }
     }
 

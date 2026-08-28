@@ -233,6 +233,27 @@ The system directory is `%APPDATA%\nem\` on Windows and `~/.config/nem/` on Unix
 
 ---
 
+## Development
+
+The solution contains three projects:
+
+| Project | Purpose |
+| --- | --- |
+| `nem/` | The CLI (commands, services, proxy templates) and the packaged dotnet tool |
+| `nem.Common/` | Shared models (`nem.json`) and path management |
+| `nem.Tests/` | xunit unit tests (version logic, env layout, config, proxies, update planning) |
+
+```bash
+dotnet build nem.slnx -c Release   # build everything
+dotnet test nem.slnx -c Release    # run the unit tests
+```
+
+The tests never touch the network: Node and npm version lookups are replaced
+with fakes, and all filesystem state lives in unique temp directories that are
+deleted afterwards.
+
+---
+
 ## Why nem?
 
 - **Lightweight** — just wraps npm and a downloaded Node distribution
