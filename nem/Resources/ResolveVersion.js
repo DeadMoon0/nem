@@ -67,8 +67,18 @@ async function fetchDoc() {
     else if (range) pool = stable.filter(v => { try { return sv.satisfies(v, range); } catch (e) { return false; } });
     else pool = stable.filter(nodeOk);                                     // newest compatible with the env node
 
-    if (pool.length === 0 && !range) pool = all.filter(nodeOk);            // allow prereleases as a last resort
-    if (pool.length === 0) pool = stable.length ? stable : all;            // no node filter at all
+    if (range) {
+        // An explicit version/dist-tag/range must resolve to something; silently
+        // falling back to the newest stable would install the wrong package.
+        if (pool.length === 0) {
+            console.error(`no version of ${pkg} matches '${range}'`);
+            console.log('');
+            process.exit(1);
+        }
+    } else {
+        if (pool.length === 0) pool = all.filter(nodeOk);                  // allow prereleases as a last resort
+        if (pool.length === 0) pool = stable.length ? stable : all;        // no node filter at all
+    }
     pool.sort((a, b) => sv.rcompare(a, b));
     console.log(pool[0] || '');
 })();

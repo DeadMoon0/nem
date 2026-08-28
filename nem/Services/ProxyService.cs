@@ -61,6 +61,44 @@ public static class ProxyService
     }
 
     /// <summary>
+    /// Deletes proxy files in the system proxy directory whose tool is not in
+    /// <paramref name="keepNames"/> (npm/npx are always kept). Called by 'nem
+    /// install' so proxies for tools that are no longer part of the env do not
+    /// linger. Other envs on this machine recreate their proxies on their next
+    /// 'nem install'.
+    /// </summary>
+    public static void PruneStaleProxies(IEnumerable<string> keepNames)
+    {
+        string proxyDir = IOPathManager.System.ProxyDirPath;
+        if (!Directory.Exists(proxyDir))
+            return;
+
+        var keep = keepNames
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        keep.Add("npm");
+        keep.Add("npx");
+
+        foreach (string file in Directory.EnumerateFiles(proxyDir))
+        {
+            // GetFileNameWithoutExtension also handles extensionless names (Unix proxies).
+            string baseName = Path.GetFileNameWithoutExtension(file);
+            if (keep.Contains(baseName))
+                continue;
+
+            try
+            {
+                File.Delete(file);
+            }
+            catch (Exception)
+            {
+                // Ignore locked files; the next install will try again.
+            }
+        }
+    }
+
+    /// <summary>
     /// Finds the nem env that contains the current directory and runs the tool in its context.
     /// Returns the tool's exit code.
     /// </summary>

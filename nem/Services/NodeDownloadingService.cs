@@ -8,7 +8,9 @@ using System.IO.Compression;
 using System.Linq;
 using System.Net.Http;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace nem.Services;
@@ -22,6 +24,11 @@ public static class NodeDownloadingService
     {
         if (string.IsNullOrWhiteSpace(version))
             throw new ArgumentException("A node version is required.", nameof(version));
+
+        // Allow a hand-edited nem.json to carry a partial spec ("22"): resolve it
+        // to the newest matching release before downloading.
+        if (IsPartialVersionSpec(version))
+            version = await ResolveNodeVersionAsync(version);
 
         string tag = GetPlatformTag(version);
         string fileName = $"{tag}.zip";
@@ -58,9 +65,78 @@ public static class NodeDownloadingService
             CopyFilesRecursively(extractedNode, envDir);
             AnsiConsole.MarkupLine("[green]Copy successful.[/]");
         }
-        else if (!clean)
+        else
         {
-            AnsiConsole.MarkupLine("[yellow]Node is already installed in the env, nothing to do.[/]");
+            string? installedVersion = GetInstalledNodeVersion(envDir);
+            if (installedVersion != null && VersionSpecMatches(version, installedVersion))
+            {
+                AnsiConsole.MarkupLine("[yellow]Node is already installed in the env, nothing to do.[/]");
+            }
+            else
+            {
+                AnsiConsole.MarkupLine(installedVersion != null
+                    ? $"[gray]Node version changed: updating the env from [yellow]{installedVersion}[/] to [green]{version}[/]...[/]"
+                    : $"[gray]The installed Node version could not be determined; re-copying Node {version} into the env...[/]");
+                RemoveNodeDistribution(extractedNode, envDir);
+                CopyFilesRecursively(extractedNode, envDir);
+                AnsiConsole.MarkupLine("[green]Copy successful.[/]");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Runs the env's node to get its exact version (e.g. "22.23.2"), or null when
+    /// it cannot be determined.
+    /// </summary>
+    public static string? GetInstalledNodeVersion(string envDir)
+    {
+        string node = PrimaryNodeBinary(envDir);
+        if (!File.Exists(node))
+            return null;
+
+        try
+        {
+            var psi = new ProcessStartInfo(node)
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                WorkingDirectory = envDir,
+            };
+            psi.ArgumentList.Add("-p");
+            psi.ArgumentList.Add("process.versions.node");
+
+            using var process = Process.Start(psi);
+            if (process == null)
+                return null;
+            string output = process.StandardOutput.ReadToEnd().Trim();
+            process.StandardError.ReadToEnd();
+            if (!process.WaitForExit(30_000))
+            {
+                process.Kill();
+                return null;
+            }
+            return process.ExitCode == 0 && output.Length > 0 ? output : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Removes the files of the Node distribution (as shipped in the extracted zip)
+    /// from the env, so an older Node version does not leave stale files behind.
+    /// </summary>
+    static void RemoveNodeDistribution(string extractedNode, string envDir)
+    {
+        foreach (string entry in Directory.EnumerateFileSystemEntries(extractedNode))
+        {
+            string dest = Path.Combine(envDir, Path.GetFileName(entry));
+            if (Directory.Exists(dest))
+                Directory.Delete(dest, recursive: true);
+            else if (File.Exists(dest))
+                File.Delete(dest);
         }
     }
 
@@ -270,8 +346,66 @@ public static class NodeDownloadingService
             });
         }
 
+        string fileName = Path.GetFileName(new Uri(url).AbsolutePath);
+        string? expectedSha256 = await FetchExpectedSha256(url, fileName);
+        if (expectedSha256 != null)
+        {
+            string actualSha256 = ComputeSha256(tmpPath);
+            if (!string.Equals(actualSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                File.Delete(tmpPath);
+                throw new IOException($"SHA256 mismatch for {fileName}: expected {expectedSha256}, got {actualSha256}. Delete the cached file and try again.");
+            }
+        }
+
         File.Move(tmpPath, destPath, overwrite: true);
         AnsiConsole.MarkupLine("[gray]Download successful![/]");
+    }
+
+    /// <summary>
+    /// Fetches the SHASUMS256.txt next to the given file and returns the expected
+    /// SHA256 for fileName. Returns null (with a warning) when the list cannot be
+    /// fetched or parsed, so a flaky list never blocks an install.
+    /// </summary>
+    static async Task<string?> FetchExpectedSha256(string fileUrl, string fileName)
+    {
+        string shasumsUrl = fileUrl.Replace(fileName, "SHASUMS256.txt");
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+            using var response = await client.GetAsync(shasumsUrl);
+            response.EnsureSuccessStatusCode();
+            string shasums = await response.Content.ReadAsStringAsync();
+            return ParseSha256(shasums, fileName);
+        }
+        catch (Exception)
+        {
+            AnsiConsole.MarkupLine("[yellow]Could not fetch SHASUMS256.txt, so the download is used without checksum verification.[/]");
+            return null;
+        }
+    }
+
+    static string? ParseSha256(string shasumsText, string fileName)
+    {
+        foreach (string line in shasumsText.Split('\n'))
+        {
+            string[] parts = line.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 2)
+                continue;
+            string name = parts[^1].TrimStart('*');
+            if (!string.Equals(name, fileName, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (Regex.IsMatch(parts[0], "^[a-fA-F0-9]{64}$"))
+                return parts[0];
+        }
+
+        return null;
+    }
+
+    static string ComputeSha256(string path)
+    {
+        using FileStream fs = File.OpenRead(path);
+        return Convert.ToHexString(SHA256.HashData(fs)).ToLowerInvariant();
     }
 
     static string GetPlatformTag(string version)

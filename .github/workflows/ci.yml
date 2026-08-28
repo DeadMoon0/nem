@@ -1,0 +1,40 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags-ignore: ['v*']
+  pull_request:
+
+jobs:
+  build:
+    # Windows is primary (nem targets the Windows Node distribution layout),
+    # but the pack/CLI smoke test should also work cross-platform.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build (Release)
+        run: dotnet build -c Release
+
+      - name: Pack
+        run: dotnet pack nem/nem.csproj -c Release -o artifacts
+
+      - name: Smoke test the CLI
+        run: dotnet run --project nem -c Release -- --help
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: nem-${{ matrix.os }}
+          path: artifacts/*.nupkg

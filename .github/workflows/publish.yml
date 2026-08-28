@@ -5,7 +5,7 @@ on:
     tags: ['v*']
 
 # contents: write  - create the GitHub Release
-# id-token: write  - NuGet trusted publishing (OIDC identity exposed as github.token)
+# id-token: write  - NuGet trusted publishing (OIDC identity for NuGet/login)
 permissions:
   contents: write
   id-token: write
@@ -41,11 +41,22 @@ jobs:
       - name: Pack
         run: dotnet pack nem/nem.csproj -c Release -o artifacts
 
-      # Trusted publishing: no API key. The OIDC JWT proves this job ran on
-      # tag v* in DeadMoon0/nem's publish.yml, which must match the trusted
-      # publisher registered on nuget.org for the package.
+      # Trusted publishing: no API key in the repo or secrets. The OIDC JWT
+      # proves this job ran on tag v* in DeadMoon0/NEM's publish.yml, which
+      # must match the trusted publisher registered on nuget.org for the
+      # package. 'user' is the nuget.org profile that owns the package.
+      - name: NuGet login (trusted publishing)
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: DeadMoon0
+          keyring: ~/.nuget/keys.keyring
+        continue-on-error: false
+
+      # Publish with the key from the login step. If the policy on nuget.org
+      # is not (yet) registered, the push is rejected there.
       - name: Publish to NuGet
-        run: dotnet nuget push artifacts/nem.*.nupkg --source https://api.nuget.org/v3/index.json --api-key "${{ github.token }}"
+        run: dotnet nuget push artifacts/nem.*.nupkg --source https://api.nuget.org/v3/index.json --api-key "${{ steps.login.outputs.NUGET_API_KEY }}"
 
       # Release notes come from the tagged commit message.
       - name: Create GitHub Release

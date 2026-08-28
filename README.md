@@ -84,6 +84,11 @@ $ nem install --clean [path]
 
 `nem install` is idempotent — re-run it any time; only what is missing gets installed.
 
+- If the Node version in `.nenv` does not match the declared version (e.g. after
+  editing `nem.json`), it is removed and the declared version is installed.
+- Proxies for tools that are no longer installed in the env are pruned, so the
+  proxy directory never holds stale shims.
+
 ### Security audit
 
 After installing, nem audits **every package** in the env (including
@@ -111,10 +116,26 @@ $ ng serve
 You can also invoke the env machinery explicitly:
 
 ```bash
-$ nem run ng -- serve
-# Runs ng from the env of the current directory; everything after
-# '--' is passed to the tool. Without an env, nem falls back to
-# the system tool of the same name.
+$ nem run ng serve
+# Runs ng from the env of the current directory; everything after the
+# tool name is passed to the tool. A literal '--' is also understood
+# and optional ('nem run ng -- serve' works too). Without an env, nem
+# falls back to the system tool of the same name.
+```
+
+### Update the Node version
+```bash
+$ nem update [nodeVersion] [path]
+
+$ nem update
+# Shows the declared and the actually installed Node version.
+
+$ nem update 20
+# Resolves '20' to the newest matching release, updates nem.json and
+# installs it into .nenv.
+
+$ nem update 18.12.0
+# Switches the env to exactly Node.js 18.12.0.
 ```
 
 ### Share with your team
@@ -168,6 +189,7 @@ nem install
   -> for each missing tool in nem.json:
        npm install -g --no-audit <tool>@<version> --prefix .nenv
   -> reads each package's "bin" entries, creates a proxy per binary
+  -> prunes proxies for tools that are no longer installed
   -> audits the whole tree against the npm advisory database
 ```
 npm handles dependency resolution; the packages and their shims land in `.nenv`. Proxies are derived from the installed `package.json` files, so every binary a tool ships (e.g. `ts-node` also ships `ts-node-esm`, `ts-script`, ...) gets one.

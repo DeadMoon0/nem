@@ -73,8 +73,13 @@ public static class IOService
         bool onPath;
         if (OperatingSystem.IsWindows())
         {
-            string currentPath = Environment.GetEnvironmentVariable("Path", EnvironmentVariableTarget.Machine) ?? "";
-            onPath = SplitPath(currentPath).Any(entry => string.Equals(entry, proxyDir, StringComparison.OrdinalIgnoreCase));
+            // The proxy dir may live in either the machine PATH (nem setup) or the
+            // user PATH (added manually).
+            string machinePath = Environment.GetEnvironmentVariable("Path", EnvironmentVariableTarget.Machine) ?? "";
+            string userPath = Environment.GetEnvironmentVariable("Path", EnvironmentVariableTarget.User) ?? "";
+            onPath = SplitPath(machinePath)
+                .Concat(SplitPath(userPath))
+                .Any(entry => string.Equals(entry, proxyDir, StringComparison.OrdinalIgnoreCase));
         }
         else
         {

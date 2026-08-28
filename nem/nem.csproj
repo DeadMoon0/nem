@@ -17,8 +17,8 @@
 		<PackageTags>Node, NPM, Package, Package Manager</PackageTags>
 		<Description>Local Node.js environment manager for projects</Description>
 		<Version>1.0.0</Version>
-		<PackageProjectUrl>https://github.com/DeadMoon0/nem</PackageProjectUrl>
-		<RepositoryUrl>https://github.com/DeadMoon0/nem.git</RepositoryUrl>
+		<PackageProjectUrl>https://github.com/DeadMoon0/NEM</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/DeadMoon0/NEM.git</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
 		<Copyright>Copyright (c) DeadMoon0 2026</Copyright>
 		<PackageReleaseNotes>Initial public release.</PackageReleaseNotes>
@@ -65,7 +65,8 @@
 	  <None Update="ProxyFiles\NAME.ps1">
 	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 	  </None>
-	  <None Update="README.md">
+	  <!-- The repo-root README.md is the package readme. -->
+	  <None Include="..\README.md">
 	    <Pack>True</Pack>
 	    <PackagePath>\</PackagePath>
 	  </None>

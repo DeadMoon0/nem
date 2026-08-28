@@ -77,16 +77,20 @@ public static class ToolService
         string name = packageName!;
         string envDir = EnvDirOf(nemJsonPath);
         string? resolved = null;
+        string? resolveError = null;
         AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
             .Start($"Resolving {name} ...", _ =>
             {
-                resolved = ResolveVersion(name, version, config.NodeVersion ?? string.Empty, envDir);
+                resolved = ResolveVersion(name, version, config.NodeVersion ?? string.Empty, envDir, out resolveError);
             });
 
         if (resolved == null)
         {
-            AnsiConsole.MarkupLine($"[red]Could not resolve a version for {Markup.Escape(name)}. Check the package name and your network connection.[/]");
+            AnsiConsole.MarkupLine($"[red]Could not resolve a version for {Markup.Escape(name)}.[/]");
+            if (resolveError != null)
+                AnsiConsole.MarkupLine($"[red]  {Markup.Escape(resolveError)}[/]");
+            AnsiConsole.MarkupLine("Check the package name, the requested version, and your network connection.");
             return 1;
         }
 
@@ -336,10 +340,12 @@ public static class ToolService
 
     /// <summary>
     /// Runs the env's node (or the system node) with the resolver script.
-    /// Returns the resolved version or null.
+    /// Returns the resolved version or null (with <paramref name="error"/> set to a
+    /// reason when the resolver reported one).
     /// </summary>
-    private static string? ResolveVersion(string packageName, string? range, string nodeVersion, string envDir)
+    private static string? ResolveVersion(string packageName, string? range, string nodeVersion, string envDir, out string? error)
     {
+        error = null;
         // Prefer the env's node (it always bundles npm's semver); fall back to a node on PATH.
         string node = Path.Combine(envDir, "node.exe");
         if (!File.Exists(node))
@@ -364,12 +370,18 @@ public static class ToolService
         {
             using var process = Process.Start(psi);
             if (process == null)
+            {
+                error = "no node runtime available (the env node is not installed and no node is on the PATH).";
                 return null;
+            }
             string output = process.StandardOutput.ReadToEnd();
-            process.StandardError.ReadToEnd();
+            string stderr = process.StandardError.ReadToEnd();
             process.WaitForExit();
             if (process.ExitCode != 0)
+            {
+                error = string.IsNullOrWhiteSpace(stderr) ? "the version resolver found no match." : stderr.Trim();
                 return null;
+            }
 
             string? version = output.Trim().Split('\n', '\r').FirstOrDefault(s => !string.IsNullOrWhiteSpace(s));
             return string.IsNullOrWhiteSpace(version) ? null : version.Trim().Trim('"');
@@ -377,6 +389,7 @@ public static class ToolService
         catch (Exception)
         {
             // No node available at all (not installed, not on PATH).
+            error = "no node runtime available (the env node is not installed and no node is on the PATH).";
             return null;
         }
     }

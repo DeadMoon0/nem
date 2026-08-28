@@ -28,16 +28,29 @@ internal class SetupCommand : AsyncCommand
 
         if (!IsRunAsAdmin())
         {
-            // Try to relaunch with admin rights
+            // Relaunch elevated so we can patch the machine PATH.
+            // Verb is only honored when UseShellExecute is true.
             var psi = new ProcessStartInfo
             {
                 FileName = Environment.ProcessPath ?? throw new InvalidOperationException("Could not determine the path of the running executable."),
-                UseShellExecute = false,
+                UseShellExecute = true,
                 WorkingDirectory = Environment.CurrentDirectory,
                 Verb = "runas"
             };
 
-            using var process = Process.Start(psi);
+            Process? process;
+            try
+            {
+                process = Process.Start(psi);
+            }
+            catch (Exception ex)
+            {
+                // The user declined (or the shell refused) the elevation prompt.
+                AnsiConsole.MarkupLine($"[red]Could not launch the elevated process: {Markup.Escape(ex.Message)}[/]");
+                AnsiConsole.MarkupLine("[red]Run [green]nem setup[/] from an elevated terminal and try again.[/]");
+                return 1;
+            }
+
             if (process == null)
             {
                 AnsiConsole.MarkupLine("[red]Failed to launch the elevated process. Run [green]nem setup[/] as an administrator.[/]");
