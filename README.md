@@ -1,3 +1,6 @@
+![Icon](https://raw.githubusercontent.com/DeadMoon0/NEM/main/nem/Assets/Icon.svg)
+[![NuGet Version](https://img.shields.io/nuget/v/nem?label=nuget%20nem)](https://www.nuget.org/packages/nem)
+
 # nem
 
 **Node Environment Manager** — Local Node.js and tool environments for your project.
