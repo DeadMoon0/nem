@@ -17,12 +17,12 @@
 		<PackageIcon>Icon.png</PackageIcon>
 		<PackageTags>Node, NPM, Package, Package Manager</PackageTags>
 		<Description>Local Node.js environment manager for projects</Description>
-		<Version>1.0.0</Version>
+		<Version>1.1.0</Version>
 		<PackageProjectUrl>https://github.com/DeadMoon0/NEM</PackageProjectUrl>
 		<RepositoryUrl>https://github.com/DeadMoon0/NEM.git</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
 		<Copyright>Copyright (c) DeadMoon0 2026</Copyright>
-		<PackageReleaseNotes>Initial public release.</PackageReleaseNotes>
+		<PackageReleaseNotes>Generalized 'nem update' (all/tools/node), added 'nem audit', idempotent Unix rc-file PATH setup, package icon, test suite. Fixed 'nem init' clobbering existing .gitignore content.</PackageReleaseNotes>
 		<PackAsTool>True</PackAsTool>
 		<ToolCommandName>nem</ToolCommandName>
 		<!-- The proxy templates (NAME.bat/NAME.ps1/NAME) ship under tools/ on purpose; -->
