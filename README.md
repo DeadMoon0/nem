@@ -19,7 +19,7 @@ No installation pollution. No "works on my machine" surprises. Everyone on the t
 
 ## Requirements
 
-- Windows (installing and downloading Node is currently Windows-only; the rest is cross-platform by design)
+- Windows, Linux or macOS — installing and downloading Node works on all three (CI verifies Windows and Linux)
 - [.NET](https://dotnet.microsoft.com) runtime (installed as a [dotnet tool](#installation))
 
 ## Installation
@@ -75,8 +75,8 @@ The `nem tool` commands only touch `nem.json` (and clean the env on remove) — 
 ```bash
 $ nem install [path]
 # The single materialization step:
-#   1. Downloads the declared Node version (cached in %APPDATA%\nem\download)
-#      and copies it into .nenv/
+#   1. Downloads the declared Node version (cached in the nem system
+#      directory, see Caches) and copies it into .nenv/
 #   2. Installs every tool declared in nem.json that is missing
 #   3. Creates global proxies for npm, npx and every binary the
 #      installed packages expose (from their package.json "bin" field)
@@ -111,7 +111,7 @@ $ ng serve
 # The global proxy finds the env by walking up from your CWD,
 # then runs the .nenv copy of ng with the env's node.
 
-$ cd ..\other-project  # no nem.json here
+$ cd ../other-project  # no nem.json here
 $ ng serve
 # No env found -> falls back to the system ng.
 ```
@@ -195,10 +195,11 @@ $ nem install
 
 **3. Proxies** — Transparent routing
 ```
-%APPDATA%\nem\proxy\ng.bat   (on your PATH)
+proxy dir on PATH (e.g. %APPDATA%\nem\proxy\ng.bat on Windows,
+~/.config/nem/proxy/ng on Unix)
   -> nem run ng -- <args>
        1. walk up from CWD looking for nem.json
-       2. if found: run .nenv\ng (shim + env node)
+       2. if found: run the env's ng (shim + env node)
        3. if not found: run the system ng (fallback)
 ```
 
