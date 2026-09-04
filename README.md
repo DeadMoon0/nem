@@ -3,7 +3,7 @@
 
 # nem
 
-**Node Environment Manager** — Local Node.js and tool environments for your project.
+**Node Environment Manager** - Local Node.js and tool environments for your project.
 
 ## The Idea
 
@@ -11,7 +11,7 @@
 
 - **Declares** the required Node version and tools in `nem.json` (committed to git)
 - **Installs** Node and tools into a `.nenv/` folder (gitignored)
-- **Routes** tool invocations transparently — use the local version when in a managed project, fall back to the system tool otherwise
+- **Routes** tool invocations transparently - use the local version when in a managed project, fall back to the system tool otherwise
 
 No installation pollution. No "works on my machine" surprises. Everyone on the team uses the same toolchain.
 
@@ -19,7 +19,7 @@ No installation pollution. No "works on my machine" surprises. Everyone on the t
 
 ## Requirements
 
-- Windows, Linux or macOS — installing and downloading Node works on all three (CI verifies Windows and Linux)
+- Windows, Linux or macOS - installing and downloading Node works on all three (CI verifies Windows and Linux)
 - [.NET](https://dotnet.microsoft.com) runtime (installed as a [dotnet tool](#installation))
 
 ## Installation
@@ -49,7 +49,7 @@ The version is validated before anything is written:
   nodejs.org, otherwise init fails.
 - A partial version (`22` or `18.12`) resolves to the newest matching release
   and the **resolved** version is what gets written to `nem.json`, e.g. `22`
-  → `22.23.2`.
+  -> `22.23.2`.
 
 ### Manage tools (declarative)
 ```bash
@@ -69,7 +69,7 @@ $ nem tool remove ts-node
 # it and deletes its proxies.
 ```
 
-The `nem tool` commands only touch `nem.json` (and clean the env on remove) — they never install packages. That keeps them fast and lets you edit declarations before materializing.
+The `nem tool` commands only touch `nem.json` (and clean the env on remove) - they never install packages. That keeps them fast and lets you edit declarations before materializing.
 
 ### Install the environment
 ```bash
@@ -85,7 +85,7 @@ $ nem install --clean [path]
 # Same, but wipes the cached zip, the cached extraction and .nenv first
 ```
 
-`nem install` is idempotent — re-run it any time; only what is missing gets installed.
+`nem install` is idempotent - re-run it any time; only what is missing gets installed.
 
 - If the Node version in `.nenv` does not match the declared version (e.g. after
   editing `nem.json`), it is removed and the declared version is installed.
@@ -102,7 +102,7 @@ database and prints the result:
 - a table of affected packages, installed versions, severity and advisory
   links when there are findings (sorted critical first).
 
-The audit is best effort — if the registry cannot be reached, nem notes it
+The audit is best effort - if the registry cannot be reached, nem notes it
 and continues; it never fails the install.
 
 ### Use tools
@@ -170,7 +170,7 @@ $ nem install
 
 ## How It Works
 
-**1. nem.json** — Your environment declaration
+**1. nem.json** - Your environment declaration
 ```json
 {
   "NodeVersion": "18.12.0",
@@ -181,7 +181,7 @@ $ nem install
 }
 ```
 
-**2. `.nenv/` folder** — The isolated environment
+**2. `.nenv/` folder** - The isolated environment
 ```
 .nenv/                                  # on Windows (flat copy of the dist)
   node.exe, npm(.cmd/.ps1), npx(...)   # the Node distribution
@@ -193,7 +193,7 @@ $ nem install
   lib/node_modules/<package>            # npm-installed env tools
 ```
 
-**3. Proxies** — Transparent routing
+**3. Proxies** - Transparent routing
 ```
 proxy dir on PATH (e.g. %APPDATA%\nem\proxy\ng.bat on Windows,
 ~/.config/nem/proxy/ng on Unix)
@@ -205,7 +205,7 @@ proxy dir on PATH (e.g. %APPDATA%\nem\proxy\ng.bat on Windows,
 
 Proxies exist as `ng`, `ng.bat` (cmd) and `ng.ps1` (PowerShell). `nem install` re-creates the proxies for `npm`, `npx` and every tool in `nem.json`, so a fresh checkout plus `nem install` makes all declared tools work.
 
-**4. Tool installation** — npm-powered
+**4. Tool installation** - npm-powered
 ```
 nem install
   -> for each missing tool in nem.json:
@@ -216,7 +216,7 @@ nem install
 ```
 npm handles dependency resolution; the packages and their shims land in `.nenv`. Proxies are derived from the installed `package.json` files, so every binary a tool ships (e.g. `ts-node` also ships `ts-node-esm`, `ts-script`, ...) gets one.
 
-**5. Version resolution** — registry + engines.node
+**5. Version resolution** - registry + engines.node
 ```
 nem tool add @angular/cli   (env NodeVersion = 18.12.0)
   -> fetches the packument from the npm registry
@@ -260,7 +260,7 @@ deleted afterwards.
 
 ## Why nem?
 
-- **Lightweight** — just wraps npm and a downloaded Node distribution
-- **Transparent** — tools work exactly as they normally do once the proxy dir is on your PATH
-- **Reproducible** — `nem.json` locks Node and tool versions across your team
-- **Portable** — one `.nenv/` per project, no system pollution, safe to delete
+- **Lightweight** - just wraps npm and a downloaded Node distribution
+- **Transparent** - tools work exactly as they normally do once the proxy dir is on your PATH
+- **Reproducible** - `nem.json` locks Node and tool versions across your team
+- **Portable** - one `.nenv/` per project, no system pollution, safe to delete
