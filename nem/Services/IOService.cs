@@ -1,4 +1,5 @@
 using nem.Common;
+using nem.Common.Attributes;
 using nem.Common.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -13,6 +14,12 @@ namespace nem.Services;
 
 public static class IOService
 {
+    static JsonSerializerSettings SerializerSettings => new()
+    {
+        Formatting = Formatting.Indented,
+        Converters = { new JsonHeaderConverter() }
+    };
+
     public static NemConfig? LoadNemConfig(string content)
     {
         var settings = new JsonLoadSettings { CommentHandling = CommentHandling.Ignore };
@@ -35,7 +42,7 @@ public static class IOService
             {
                 existing.NodeVersion = version;
                 config = existing;
-                File.WriteAllText(configPath, NemConfig.Header + "\n" + JsonConvert.SerializeObject(config, Formatting.Indented));
+                File.WriteAllText(configPath, JsonConvert.SerializeObject(config, SerializerSettings));
                 AnsiConsole.MarkupLine($"[yellow]Updated {local.ConfigFileName} to Node version {version}.[/]");
             }
             else
@@ -45,7 +52,7 @@ public static class IOService
         }
         else
         {
-            File.WriteAllText(configPath, NemConfig.Header + "\n" + JsonConvert.SerializeObject(config, Formatting.Indented));
+            File.WriteAllText(configPath, JsonConvert.SerializeObject(config, SerializerSettings));
         }
 
         string envPath = local.EnvDirPath;

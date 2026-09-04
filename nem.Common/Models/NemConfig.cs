@@ -1,5 +1,6 @@
 using nem.Common.Attributes;
 using System.Reflection;
+using Newtonsoft.Json;
 
 namespace nem.Common.Models;
 
