@@ -1,4 +1,5 @@
 using nem.Common.Attributes;
+using System.Reflection;
 
 namespace nem.Common.Models;
 
@@ -12,7 +13,13 @@ namespace nem.Common.Models;
  */")]
 public class NemConfig
 {
+    public static readonly string Header = typeof(NemConfig)
+        .GetCustomAttributes(typeof(JsonHeaderAttribute), false)
+        .OfType<JsonHeaderAttribute>()
+        .FirstOrDefault()?
+        .Header ?? string.Empty;
+
     public string? NodeVersion { get; set; }
     public List<NemToolConfig> Tools { get; set; } = [];
-    public string Version { get; set; } = "1.0.0";
+    public string Version { get; set; } = "Current.Default.Version";
 }

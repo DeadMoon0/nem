@@ -13,14 +13,6 @@ namespace nem.Services;
 
 public static class IOService
 {
-    static string GetConfigHeader()
-    {
-        var attr = typeof(NemConfig).GetCustomAttributes(typeof(nem.Common.Attributes.JsonHeaderAttribute), false)
-            .OfType<nem.Common.Attributes.JsonHeaderAttribute>()
-            .FirstOrDefault();
-        return attr?.Header ?? string.Empty;
-    }
-
     public static NemConfig? LoadNemConfig(string content)
     {
         var settings = new JsonLoadSettings { CommentHandling = CommentHandling.Ignore };
@@ -31,7 +23,6 @@ public static class IOService
     public static void InitEnv(string path, string version)
     {
         var local = IOPathManager.Local(path);
-        var header = GetConfigHeader() + "\n";
         var config = new NemConfig { NodeVersion = version };
 
         string configPath = local.ConfigFilePath;
@@ -44,7 +35,7 @@ public static class IOService
             {
                 existing.NodeVersion = version;
                 config = existing;
-                File.WriteAllText(configPath, header + JsonConvert.SerializeObject(config, Formatting.Indented));
+                File.WriteAllText(configPath, NemConfig.Header + "\n" + JsonConvert.SerializeObject(config, Formatting.Indented));
                 AnsiConsole.MarkupLine($"[yellow]Updated {local.ConfigFileName} to Node version {version}.[/]");
             }
             else
@@ -54,7 +45,7 @@ public static class IOService
         }
         else
         {
-            File.WriteAllText(configPath, header + JsonConvert.SerializeObject(config, Formatting.Indented));
+            File.WriteAllText(configPath, NemConfig.Header + "\n" + JsonConvert.SerializeObject(config, Formatting.Indented));
         }
 
         string envPath = local.EnvDirPath;
