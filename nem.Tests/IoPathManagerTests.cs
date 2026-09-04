@@ -14,8 +14,8 @@ public class IoPathManagerTests
     {
         var local = IOPathManager.Local("/some/project");
 
-        Assert.Equal("nem.json", local.ConfigFileName);
-        Assert.Equal(Path.Combine("/some/project", "nem.json"), local.ConfigFilePath);
+        Assert.Equal("nem.jsonc", local.ConfigFileName);
+        Assert.Equal(Path.Combine("/some/project", "nem.jsonc"), local.ConfigFilePath);
         Assert.Equal(".nenv", local.EnvDirName);
         Assert.Equal(Path.Combine("/some/project", ".nenv"), local.EnvDirPath);
     }

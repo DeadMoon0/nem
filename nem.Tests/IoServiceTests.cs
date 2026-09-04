@@ -18,8 +18,8 @@ public class IoServiceTests
 
         IOService.InitEnv(tmp.FullName, "22.23.2");
 
-        string configPath = Path.Combine(tmp.FullName, "nem.json");
-        NemConfig config = JsonConvert.DeserializeObject<NemConfig>(File.ReadAllText(configPath))!;
+        string configPath = Path.Combine(tmp.FullName, "nem.jsonc");
+        NemConfig config = IOService.LoadNemConfig(File.ReadAllText(configPath))!;
         Assert.Equal("22.23.2", config.NodeVersion);
         Assert.True(Directory.Exists(Path.Combine(tmp.FullName, ".nenv")));
 
@@ -38,11 +38,11 @@ public class IoServiceTests
             NodeVersion = "22.0.0",
             Tools = [new NemToolConfig { ToolName = "typescript", ToolVersion = "5.6.3" }],
         };
-        File.WriteAllText(Path.Combine(tmp.FullName, "nem.json"), JsonConvert.SerializeObject(existing));
+        File.WriteAllText(Path.Combine(tmp.FullName, "nem.jsonc"), JsonConvert.SerializeObject(existing));
 
         IOService.InitEnv(tmp.FullName, "22.23.2");
 
-        NemConfig config = JsonConvert.DeserializeObject<NemConfig>(File.ReadAllText(Path.Combine(tmp.FullName, "nem.json")))!;
+        NemConfig config = IOService.LoadNemConfig(File.ReadAllText(Path.Combine(tmp.FullName, "nem.jsonc")))!;
         Assert.Equal("22.23.2", config.NodeVersion);
         Assert.Single(config.Tools);
         Assert.Equal("typescript", config.Tools[0].ToolName);
@@ -69,8 +69,8 @@ public class IoServiceTests
 
         IOService.InitEnv(tmp.FullName, "22.23.2");
 
-        NemConfig config = JsonConvert.DeserializeObject<NemConfig>(
-            File.ReadAllText(Path.Combine(tmp.FullName, "nem.json")))!;
+        NemConfig config = IOService.LoadNemConfig(
+            File.ReadAllText(Path.Combine(tmp.FullName, "nem.jsonc")))!;
         Assert.Equal("22.23.2", config.NodeVersion);
     }
 
@@ -80,7 +80,7 @@ public class IoServiceTests
         using var tmp = new TempDir();
         string nested = Path.Combine(tmp.FullName, "a", "b");
         Directory.CreateDirectory(nested);
-        string rootConfig = Path.Combine(tmp.FullName, "nem.json");
+        string rootConfig = Path.Combine(tmp.FullName, "nem.jsonc");
         File.WriteAllText(rootConfig, "{}");
 
         bool found = IOService.TryGetContainingEnv(nested, out string? foundPath);

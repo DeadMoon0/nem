@@ -1,6 +1,7 @@
 using nem.Common;
 using nem.Common.Models;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Spectre.Console;
 using System;
 using System.Collections.Generic;
@@ -12,20 +13,38 @@ namespace nem.Services;
 
 public static class IOService
 {
+    static string GetConfigHeader()
+    {
+        var attr = typeof(NemConfig).GetCustomAttributes(typeof(nem.Common.Attributes.JsonHeaderAttribute), false)
+            .OfType<nem.Common.Attributes.JsonHeaderAttribute>()
+            .FirstOrDefault();
+        return attr?.Header ?? string.Empty;
+    }
+
+    public static NemConfig? LoadNemConfig(string content)
+    {
+        var settings = new JsonLoadSettings { CommentHandling = CommentHandling.Ignore };
+        var token = JToken.Parse(content, settings);
+        return token.ToObject<NemConfig>();
+    }
+
     public static void InitEnv(string path, string version)
     {
         var local = IOPathManager.Local(path);
+        var header = GetConfigHeader() + "\n";
+        var config = new NemConfig { NodeVersion = version };
 
         string configPath = local.ConfigFilePath;
         if (File.Exists(configPath))
         {
             // Reconcile an existing config (e.g. one holding the partial spec "22")
             // with the fully resolved version, keeping everything else (tools) intact.
-            NemConfig existing = JsonConvert.DeserializeObject<NemConfig>(File.ReadAllText(configPath)) ?? new NemConfig();
+            NemConfig existing = LoadNemConfig(File.ReadAllText(configPath)) ?? new NemConfig();
             if (!string.Equals(existing.NodeVersion, version, System.StringComparison.OrdinalIgnoreCase))
             {
                 existing.NodeVersion = version;
-                File.WriteAllText(configPath, JsonConvert.SerializeObject(existing, Formatting.Indented));
+                config = existing;
+                File.WriteAllText(configPath, header + JsonConvert.SerializeObject(config, Formatting.Indented));
                 AnsiConsole.MarkupLine($"[yellow]Updated {local.ConfigFileName} to Node version {version}.[/]");
             }
             else
@@ -35,7 +54,7 @@ public static class IOService
         }
         else
         {
-            File.WriteAllText(configPath, JsonConvert.SerializeObject(new NemConfig { NodeVersion = version }, Formatting.Indented));
+            File.WriteAllText(configPath, header + JsonConvert.SerializeObject(config, Formatting.Indented));
         }
 
         string envPath = local.EnvDirPath;
@@ -111,9 +130,10 @@ public static class IOService
     {
         var local = IOPathManager.Local(searchDirPath);
 
-        if (File.Exists(local.ConfigFilePath))
+        var existingPath = local.FindExistingConfigPath;
+        if (existingPath != null)
         {
-            foundPath = local.ConfigFilePath;
+            foundPath = existingPath;
             return true;
         }
 
