@@ -1,0 +1,10 @@
+<Project>
+
+	<PropertyGroup>
+		<!-- Keep the local checkout path out of the shipped dlls and pdbs: source
+		     paths, the pdb path in the dll and the SourceLink document map all
+		     record /_/... instead of the folder the build ran in. -->
+		<DeterministicSourcePaths>true</DeterministicSourcePaths>
+	</PropertyGroup>
+
+</Project>
