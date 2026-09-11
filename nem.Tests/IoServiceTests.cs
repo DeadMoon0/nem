@@ -74,26 +74,4 @@ public class IoServiceTests
         Assert.Equal("22.23.2", config.NodeVersion);
     }
 
-    [Fact]
-    public void TryGetContainingEnv_Finds_The_Closest_Config()
-    {
-        using var tmp = new TempDir();
-        string nested = Path.Combine(tmp.FullName, "a", "b");
-        Directory.CreateDirectory(nested);
-        string rootConfig = Path.Combine(tmp.FullName, "nem.json");
-        File.WriteAllText(rootConfig, "{}");
-
-        bool found = IOService.TryGetContainingEnv(nested, out string? foundPath);
-
-        Assert.True(found);
-        Assert.Equal(rootConfig, foundPath);
-    }
-
-    [Fact]
-    public void TryGetContainingEnv_Returns_False_Without_A_Config_Above()
-    {
-        using var tmp = new TempDir();
-
-        Assert.False(IOService.TryGetContainingEnv(Path.Combine(tmp.FullName, "deep"), out _));
-    }
 }

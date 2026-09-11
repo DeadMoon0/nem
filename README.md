@@ -89,18 +89,23 @@ $ nem install --clean [path]
 
 - If the Node version in `.nenv` does not match the declared version (e.g. after
   editing `nem.json`), it is removed and the declared version is installed.
-- Proxies for tools that are no longer installed in the env are pruned, so the
-  proxy directory never holds stale shims.
+- Proxies are only ever added, never removed. The proxy directory is machine-wide,
+  so pruning "stale" shims here would delete the ones another project still needs.
+  A surplus proxy is harmless: inside an env that does not declare the tool it says
+  so, and outside any env it forwards to the system tool. `nem tool remove` still
+  deletes the proxy of the tool it removes.
 
 ### Security audit
 
 After installing, nem audits **every package** in the env (including
 transitive dependencies of your tools) against the npm registry's advisory
-database and prints the result:
+database and prints the verdict: a green confirmation when nothing is known to
+be vulnerable, otherwise the count by severity.
 
-- a green confirmation when nothing is known to be vulnerable,
-- a table of affected packages, installed versions, severity and advisory
-  links when there are findings (sorted critical first).
+```bash
+nem audit          # the full list: package, installed version, severity, advisory link
+nem audit ./path   # any folder inside the env
+```
 
 The audit is best effort - if the registry cannot be reached, nem notes it
 and continues; it never fails the install.
@@ -125,6 +130,28 @@ $ nem run ng serve
 # and optional ('nem run ng -- serve' works too). Without an env, nem
 # falls back to the system tool of the same name.
 ```
+
+#### A project's own copy wins
+
+The tools in `nem.json` are the env's copy: what runs when the project does not
+ship the tool itself. npm CLIs resolve the nearest `node_modules` before anything
+global, so once a workspace declares the same package in its `package.json`, that
+copy decides the version there - `nem.json` still governs the env copy, not the
+project's.
+
+```bash
+$ cd my-repo            # nem.json pins @angular/cli 20.3.11
+$ ng --version
+20.3.11                 # the env copy
+
+$ cd frontend           # package.json: "@angular/cli": "^20.3.11"
+$ ng --version
+20.3.37                 # the workspace copy, pinned by its package-lock.json
+```
+
+This is deliberate: forcing the env version here would build with a different
+tool than the project's lockfile pins, and than CI uses. `nem tool list` reports
+it as `local <version>` so the difference is visible instead of surprising.
 
 ### Update the env
 ```bash
@@ -211,7 +238,7 @@ nem install
   -> for each missing tool in nem.json:
        npm install -g --no-audit <tool>@<version> --prefix .nenv
   -> reads each package's "bin" entries, creates a proxy per binary
-  -> prunes proxies for tools that are no longer installed
+  -> warns when another PATH entry answers for a proxied name first
   -> audits the whole tree against the npm advisory database
 ```
 npm handles dependency resolution; the packages and their shims land in `.nenv`. Proxies are derived from the installed `package.json` files, so every binary a tool ships (e.g. `ts-node` also ships `ts-node-esm`, `ts-script`, ...) gets one.

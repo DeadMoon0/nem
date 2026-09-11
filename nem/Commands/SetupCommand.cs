@@ -1,3 +1,4 @@
+using Microsoft.Win32;
 using nem.Common;
 using nem.Services;
 using Spectre.Console;
@@ -6,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Linq;
 using System.Threading;
@@ -33,6 +35,9 @@ internal class SetupCommand : AsyncCommand
                 WorkingDirectory = Environment.CurrentDirectory,
                 Verb = "runas"
             };
+            // Without this the elevated process runs with no arguments: it prints
+            // the help screen, exits 0, and setup silently does nothing.
+            psi.ArgumentList.Add("setup");
 
             Process? process;
             try
@@ -54,28 +59,39 @@ internal class SetupCommand : AsyncCommand
             }
 
             process.WaitForExit();
-            return process.ExitCode;
+
+            // The elevated run is a separate process in its own window, so its exit
+            // code is the only thing we see of it. Confirm the PATH really changed
+            // rather than reporting success on its word.
+            if (IOService.ProxyDirIsOnPath())
+            {
+                AnsiConsole.MarkupLine("[green]Successfully updated the machine PATH.[/]");
+                PathPrecedence.ReportShadows(PathPrecedence.FindShadowsOnStoredPath());
+                AnsiConsole.MarkupLine("[yellow]Please restart your terminal for the changes to take effect.[/]");
+                AnsiConsole.MarkupLine("[yellow]A new window inherits its PATH from whatever started it, so if it still misses[/]");
+                AnsiConsole.MarkupLine("[yellow]the proxies, restart Windows Explorer or sign out and back in.[/]");
+                return 0;
+            }
+
+            AnsiConsole.MarkupLine($"[red]The elevated run ended with exit code {process.ExitCode}, but the proxy directory is still not in the PATH.[/]");
+            AnsiConsole.MarkupLine("[red]Run [green]nem setup[/] from an elevated terminal to see what went wrong.[/]");
+            return process.ExitCode == 0 ? 1 : process.ExitCode;
         }
 
         // Create the nem system directory structure
-        IOService.EnsureSystemDir();
+        IOService.EnsureSystemDirectories();
 
         string proxyPath = IOPathManager.System.ProxyDirPath;
         AnsiConsole.MarkupLine($"[gray]Setup nem proxies: {proxyPath}[/]");
 
-        // Prepend the proxy directory to the machine PATH, removing any stale entries first.
-        string currentPath = Environment.GetEnvironmentVariable("Path", EnvironmentVariableTarget.Machine) ?? "";
-        var entries = currentPath
-            .Split(';', StringSplitOptions.RemoveEmptyEntries)
-            .Select(e => e.Trim())
-            .Where(e => !string.Equals(e, proxyPath, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        entries.Insert(0, proxyPath);
-
-        Environment.SetEnvironmentVariable("Path", string.Join(";", entries), EnvironmentVariableTarget.Machine);
+        if (!TryPrependToMachinePath(proxyPath))
+            return 1;
 
         AnsiConsole.MarkupLine("[green]Successfully updated the machine PATH.[/]");
+        PathPrecedence.ReportShadows(PathPrecedence.FindShadowsOnStoredPath());
         AnsiConsole.MarkupLine("[yellow]Please restart your terminal for the changes to take effect.[/]");
+        AnsiConsole.MarkupLine("[yellow]A new window inherits its PATH from whatever started it, so if it still misses[/]");
+        AnsiConsole.MarkupLine("[yellow]the proxies, restart Windows Explorer or sign out and back in.[/]");
         return 0;
     }
 
@@ -85,7 +101,7 @@ internal class SetupCommand : AsyncCommand
     /// </summary>
     static int SetupUnixShellPath()
     {
-        IOService.EnsureSystemDir();
+        IOService.EnsureSystemDirectories();
         string proxyDir = IOPathManager.System.ProxyDirPath;
         string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
@@ -133,6 +149,83 @@ internal class SetupCommand : AsyncCommand
         }
         return updated;
     }
+
+    /// <summary>
+    /// Prepends the proxy directory to the machine PATH, writing the registry
+    /// value directly.
+    /// <para>
+    /// <c>Environment.SetEnvironmentVariable</c> would be shorter but damages the
+    /// value twice: it reads PATH back already expanded, so entries like
+    /// <c>%SystemRoot%\system32</c> would be written back resolved and lose their
+    /// indirection for good, and it stores the result as REG_SZ where Windows
+    /// keeps PATH as REG_EXPAND_SZ.
+    /// </para>
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    static bool TryPrependToMachinePath(string proxyPath)
+    {
+        const string EnvironmentKey = @"SYSTEM\CurrentControlSet\Control\Session Manager\Environment";
+
+        try
+        {
+            using RegistryKey? key = Registry.LocalMachine.OpenSubKey(EnvironmentKey, writable: true);
+            if (key == null)
+            {
+                AnsiConsole.MarkupLine("[red]Could not open the machine environment key in the registry.[/]");
+                return false;
+            }
+
+            // DoNotExpandEnvironmentNames keeps %VAR% entries as they were written.
+            string current = key.GetValue("Path", "", RegistryValueOptions.DoNotExpandEnvironmentNames) as string ?? "";
+
+            key.SetValue("Path", PrependPathEntry(current, proxyPath), RegistryValueKind.ExpandString);
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.MarkupLine($"[red]Could not update the machine PATH: {Markup.Escape(ex.Message)}[/]");
+            return false;
+        }
+
+        BroadcastEnvironmentChange();
+        return true;
+    }
+
+    /// <summary>
+    /// Puts <paramref name="entry"/> at the front of a ';'-separated PATH value and
+    /// drops any earlier copy of it, so the entry wins and re-running setup does
+    /// not stack duplicates. The remaining entries are passed through untouched -
+    /// including unexpanded ones like <c>%SystemRoot%\system32</c>.
+    /// </summary>
+    internal static string PrependPathEntry(string currentPath, string entry)
+    {
+        var entries = currentPath
+            .Split(';', StringSplitOptions.RemoveEmptyEntries)
+            .Select(existing => existing.Trim())
+            .Where(existing => existing.Length > 0 && !string.Equals(existing, entry, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        entries.Insert(0, entry);
+
+        return string.Join(";", entries);
+    }
+
+    /// <summary>
+    /// Tells running programs to re-read the environment. Writing the registry
+    /// directly means nothing announces the change for us, and without this every
+    /// terminal keeps the old PATH until the next sign-in.
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    static void BroadcastEnvironmentChange()
+    {
+        const int HwndBroadcast = 0xFFFF;
+        const int WmSettingChange = 0x001A;
+        const int SmtoAbortIfHung = 0x0002;
+
+        SendMessageTimeout((IntPtr)HwndBroadcast, WmSettingChange, IntPtr.Zero, "Environment", SmtoAbortIfHung, 5000, out _);
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr SendMessageTimeout(
+        IntPtr hWnd, int msg, IntPtr wParam, string lParam, int flags, int timeoutMs, out IntPtr result);
 
     [SupportedOSPlatform("windows")]
     private static bool IsRunAsAdmin()

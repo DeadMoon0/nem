@@ -59,7 +59,7 @@ public static class ToolService
     /// </summary>
     public static int Add(string packageSpec)
     {
-        if (!TryGetEnvContext(out NemConfig? config, out string nemJsonPath) || config == null)
+        if (!TryGetEnvContext(out NemConfig? config, out IOPathManager.IOPathManagerEnv? env) || config == null || env == null)
             return NotInEnv();
 
         if (!TryParsePackageSpec(packageSpec, out string? packageName, out string? version))
@@ -75,7 +75,7 @@ public static class ToolService
         }
 
         string name = packageName!;
-        string envDir = EnvDirOf(nemJsonPath);
+        string envDir = env.EnvDirPath;
         string? resolved = null;
         string? resolveError = null;
         AnsiConsole.Status()
@@ -100,8 +100,8 @@ public static class ToolService
         else
             config.Tools.Add(new NemToolConfig { ToolName = name, ToolVersion = resolved });
 
-        File.WriteAllText(nemJsonPath, JsonConvert.SerializeObject(config, Formatting.Indented) + Environment.NewLine);
-        AnsiConsole.MarkupLine($"[green]Added[/] {name}@{resolved} to {Markup.Escape(Path.GetFileName(nemJsonPath))}.");
+        File.WriteAllText(env.ConfigFilePath, JsonConvert.SerializeObject(config, Formatting.Indented) + Environment.NewLine);
+        AnsiConsole.MarkupLine($"[green]Added[/] {name}@{resolved} to {Markup.Escape(env.ConfigFilePath)}.");
         AnsiConsole.MarkupLine($"Run [green]nem install[/] to install it into the env.");
         return 0;
     }
@@ -112,22 +112,22 @@ public static class ToolService
     /// </summary>
     public static int Remove(string packageName)
     {
-        if (!TryGetEnvContext(out NemConfig? config, out string nemJsonPath) || config == null)
+        if (!TryGetEnvContext(out NemConfig? config, out IOPathManager.IOPathManagerEnv? env) || config == null || env == null)
             return NotInEnv();
 
         var tool = config.Tools.FirstOrDefault(t => string.Equals(t.ToolName, packageName, StringComparison.OrdinalIgnoreCase));
         if (tool == null)
         {
-            AnsiConsole.MarkupLine($"[red]Tool '{Markup.Escape(packageName)}' is not listed in {Markup.Escape(Path.GetFileName(nemJsonPath))}.[/]");
+            AnsiConsole.MarkupLine($"[red]Tool '{Markup.Escape(packageName)}' is not listed in {Markup.Escape(env.ConfigFilePath)}.[/]");
             return 1;
         }
 
         config.Tools.Remove(tool);
         string nemJsonText = JsonConvert.SerializeObject(config, Formatting.Indented) + Environment.NewLine;
-        File.WriteAllText(nemJsonPath, nemJsonText);
-        AnsiConsole.MarkupLine($"Removed {packageName} from {Markup.Escape(Path.GetFileName(nemJsonPath))}.");
+        File.WriteAllText(env.ConfigFilePath, nemJsonText);
+        AnsiConsole.MarkupLine($"Removed {packageName} from {Markup.Escape(env.ConfigFilePath)}.");
 
-        string envDir = EnvDirOf(nemJsonPath);
+        string envDir = env.EnvDirPath;
         if (!IsToolInstalled(envDir, packageName))
             return 0;
 
@@ -142,23 +142,117 @@ public static class ToolService
 
     public static int List()
     {
-        if (!TryGetEnvContext(out NemConfig? config, out string nemJsonPath) || config == null)
+        if (!TryGetEnvContext(out NemConfig? config, out IOPathManager.IOPathManagerEnv? env) || config == null || env == null)
             return NotInEnv();
 
-        string envDir = EnvDirOf(nemJsonPath);
+        string envDir = env.EnvDirPath;
+
+        // Which of this env's commands a typed name actually reaches. Installed is
+        // not the same as reachable: a missing or shadowed proxy sends the name
+        // somewhere else entirely, which is invisible without asking.
+        var unreachable = PathPrecedence
+            .FindShadowsOnProcessPath(EnvironmentInstaller.ExpectedCommands(config, envDir))
+            .ToDictionary(shadow => shadow.ToolName, StringComparer.OrdinalIgnoreCase);
+
         var table = new Table();
         table.AddColumn(new TableColumn("Tool"));
         table.AddColumn(new TableColumn("Version"));
         table.AddColumn(new TableColumn("Status"));
+        table.AddColumn(new TableColumn("Command"));
+
+        string cwd = Directory.GetCurrentDirectory();
+        bool anyLocal = false;
 
         foreach (var tool in config.Tools)
         {
             bool installed = IsToolInstalled(envDir, tool.ToolName);
-            table.AddRow(tool.ToolName, tool.ToolVersion, installed ? "[green]installed[/]" : "[yellow]not installed[/]");
+            string? localVersion = FindLocalToolVersion(cwd, tool.ToolName);
+            anyLocal |= localVersion != null && !string.Equals(localVersion, tool.ToolVersion, StringComparison.OrdinalIgnoreCase);
+
+            table.AddRow(
+                tool.ToolName,
+                tool.ToolVersion,
+                installed ? "[green]installed[/]" : "[yellow]not installed[/]",
+                installed ? DescribeReach(ReadToolBins(envDir, tool.ToolName), unreachable, localVersion, tool.ToolVersion) : "-");
         }
 
         AnsiConsole.Write(table);
+
+        if (anyLocal)
+        {
+            AnsiConsole.MarkupLine("[yellow]A project node_modules here declares the tool itself and takes over from the env.[/]");
+            AnsiConsole.MarkupLine("[yellow]That is how npm tools work; nem.json governs the env copy, the project governs its own.[/]");
+        }
+
+        // Name the directories the Command column is talking about, and what nem
+        // actually found in the proxy one, so a surprising verdict can be checked
+        // rather than guessed at.
+        var proxied = PathPrecedence.ProxiedCommandNames().OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToList();
+        AnsiConsole.MarkupLine($"[gray]env      : {Markup.Escape(envDir)}[/]");
+        AnsiConsole.MarkupLine($"[gray]proxies  : {Markup.Escape(IOPathManager.System.ProxyDirPath)}[/]");
+        AnsiConsole.MarkupLine($"[gray]provides : {Markup.Escape(proxied.Count == 0 ? "(nothing)" : string.Join(", ", proxied))}[/]");
+        AnsiConsole.MarkupLine($"[gray]on PATH  : {(PathPrecedence.ProcessPathDirs().Any(dir => PathPrecedence.SamePath(dir, IOPathManager.System.ProxyDirPath)) ? "yes" : "no")}[/]");
         return 0;
+    }
+
+    /// <summary>
+    /// Walks up from <paramref name="startDir"/> for a project copy of the package
+    /// and returns its version, or null when there is none.
+    /// <para>
+    /// npm CLIs resolve the nearest node_modules before anything global, so a
+    /// workspace that declares the tool itself decides which version runs there -
+    /// nem.json only governs the env copy. Reported rather than fought: overriding
+    /// it would build with a different tool than the project's lockfile pins.
+    /// </para>
+    /// </summary>
+    internal static string? FindLocalToolVersion(string startDir, string packageName)
+    {
+        string relativePackagePath = Path.Combine(packageName.Split('/', '\\'));
+
+        for (string? dir = Path.GetFullPath(startDir); dir != null; dir = Path.GetDirectoryName(dir))
+        {
+            string packageJson = Path.Combine(dir, "node_modules", relativePackagePath, "package.json");
+            if (!File.Exists(packageJson))
+                continue;
+
+            try
+            {
+                string? version = JObject.Parse(File.ReadAllText(packageJson))["version"]?.ToString();
+                return string.IsNullOrWhiteSpace(version) ? null : version;
+            }
+            catch (Exception)
+            {
+                // A malformed package.json tells us nothing about the version.
+                return null;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// How the tool's bins resolve when typed: through the nem proxy, from a
+    /// project-local copy, or from somewhere else entirely. Reported per tool so a
+    /// single unreachable bin is not hidden by its siblings.
+    /// </summary>
+    private static string DescribeReach(
+        IReadOnlyList<string> bins,
+        Dictionary<string, PathPrecedence.Shadow> unreachable,
+        string? localVersion,
+        string declaredVersion)
+    {
+        var problems = bins.Where(unreachable.ContainsKey).Select(bin => unreachable[bin]).ToList();
+        if (problems.Count == 0)
+        {
+            // The name reaches nem; a project copy still decides what nem launches.
+            return localVersion != null && !string.Equals(localVersion, declaredVersion, StringComparison.OrdinalIgnoreCase)
+                ? $"[yellow]local {Markup.Escape(localVersion)}[/]"
+                : "[green]via nem[/]";
+        }
+
+        return string.Join(", ", problems.Select(problem => problem.Reason == PathPrecedence.Unreachable.NoProxy
+            ? $"[red]{Markup.Escape(problem.ToolName)}: no proxy[/]"
+            : $"[red]{Markup.Escape(problem.ToolName)}: from {Markup.Escape(problem.ShadowingDir)}[/]"));
     }
 
     /// <summary>
@@ -426,27 +520,22 @@ public static class ToolService
         }
     }
 
-    private static string EnvDirOf(string nemJsonPath) =>
-        IOPathManager.Local(Path.GetDirectoryName(nemJsonPath)!).EnvDirPath;
-
     private static int NotInEnv()
     {
         AnsiConsole.MarkupLine($"[red]No {Markup.Escape(IOPathManager.Local(Directory.GetCurrentDirectory()).ConfigFileName)} found in the current directory or any parent.[/]");
-        AnsiConsole.MarkupLine($"Run [green]nem init <nodeVersion>[/] first.");
+        AnsiConsole.MarkupLine($"Run [green]nem init <nodeVersion>[/] in your project root first.");
         return 1;
     }
 
-    private static bool TryGetEnvContext(out NemConfig? config, out string nemJsonPath)
+    private static bool TryGetEnvContext(out NemConfig? config, out IOPathManager.IOPathManagerEnv? env)
     {
         config = null;
-        nemJsonPath = string.Empty;
-        if (!IOService.TryGetContainingEnv(Directory.GetCurrentDirectory(), out string? found))
+        if (!IOPathManager.TryFindEnv(Directory.GetCurrentDirectory(), out env))
             return false;
 
-        nemJsonPath = found;
         try
         {
-            config = JsonConvert.DeserializeObject<NemConfig>(File.ReadAllText(nemJsonPath));
+            config = JsonConvert.DeserializeObject<NemConfig>(File.ReadAllText(env.ConfigFilePath));
         }
         catch (Exception)
         {

@@ -21,7 +21,7 @@ internal class UpdateCommandSettings : CommandSettings
 
     [CommandArgument(1, "[path]")]
     [DefaultValue(".")]
-    [Description("The folder path where the env is located.")]
+    [Description("A folder inside the env. The nem.json is looked up from there upwards.")]
     public required string Path { get; init; }
 
     [CommandOption("-t|--tools")]
@@ -37,12 +37,8 @@ internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
             return 1;
 
         string path = Path.GetFullPath(settings.Path);
-        var local = IOPathManager.Local(path);
-        if (!File.Exists(local.ConfigFilePath))
-        {
-            AnsiConsole.MarkupLine($"[red]No {local.ConfigFileName} found in {Markup.Escape(path)}. Run [green]nem init[/] first.[/]");
+        if (!EnvLocator.TryLocate(path, out IOPathManager.IOPathManagerEnv? local))
             return 1;
-        }
 
         NemConfig config = LoadConfig(local);
         string envDir = local.EnsureEnvDirPath();

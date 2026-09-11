@@ -35,43 +35,28 @@ public class ProxyServiceTests
     }
 
     [Fact]
-    public void Prune_Removes_Proxies_Outside_The_Keep_List_But_Keeps_Npm_And_Npx()
+    public void Installing_A_Tool_Leaves_The_Proxies_Of_Other_Envs_Alone()
     {
+        // The proxy directory is shared by every env on the machine, so installing
+        // one env's tool must never remove another env's proxies.
         using var tmp = new TempDir();
-        string proxyDir = tmp.FullName;
-        foreach (string name in new[] { "npm", "npx", "tsc", "oldbin" })
-        {
-            foreach (string suffix in new[] { "", ".bat", ".ps1" })
-                File.WriteAllText(Path.Combine(proxyDir, name + suffix), "proxy");
-        }
+        string filesDir = Path.Combine(tmp.FullName, "files");
+        string targetDir = Path.Combine(tmp.FullName, "target");
+        Directory.CreateDirectory(filesDir);
+        Directory.CreateDirectory(targetDir);
+        foreach (string template in new[] { "NAME", "NAME.bat", "NAME.ps1" })
+            File.WriteAllText(Path.Combine(filesDir, template), "template");
 
-        ProxyService.PruneStaleProxies(proxyDir, ["tsc"]);
+        // Another project's proxy is already there.
+        foreach (string suffix in new[] { "", ".bat", ".ps1" })
+            File.WriteAllText(Path.Combine(targetDir, "ng" + suffix), "other-env-proxy");
 
-        Assert.Equal(
-            ["npm", "npm.bat", "npm.ps1", "npx", "npx.bat", "npx.ps1", "tsc", "tsc.bat", "tsc.ps1"],
-            Directory.EnumerateFiles(proxyDir).Select(Path.GetFileName).OrderBy(n => n, StringComparer.Ordinal).ToList());
-    }
+        ProxyService.TryInstallTool("tsc", filesDir, targetDir);
 
-    [Fact]
-    public void Prune_Matches_Keep_Names_Case_Insensitively()
-    {
-        using var tmp = new TempDir();
-        string proxyDir = tmp.FullName;
-        File.WriteAllText(Path.Combine(proxyDir, "TSC"), "proxy");
-        File.WriteAllText(Path.Combine(proxyDir, "TSC.bat"), "proxy");
-
-        ProxyService.PruneStaleProxies(proxyDir, ["tsc"]);
-
-        Assert.True(File.Exists(Path.Combine(proxyDir, "TSC")));
-        Assert.True(File.Exists(Path.Combine(proxyDir, "TSC.bat")));
-    }
-
-    [Fact]
-    public void Prune_Handles_A_Missing_Directory()
-    {
-        string missing = Path.Combine(Path.GetTempPath(), "nem-tests-missing-" + Guid.NewGuid().ToString("N"));
-        ProxyService.PruneStaleProxies(missing, []);
-        Assert.False(Directory.Exists(missing));
+        Assert.True(File.Exists(Path.Combine(targetDir, "tsc.bat")));
+        Assert.True(File.Exists(Path.Combine(targetDir, "ng")));
+        Assert.True(File.Exists(Path.Combine(targetDir, "ng.bat")));
+        Assert.True(File.Exists(Path.Combine(targetDir, "ng.ps1")));
     }
 
     [Fact]

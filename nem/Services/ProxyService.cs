@@ -1,4 +1,4 @@
-using nem.Common;
+﻿using nem.Common;
 using Spectre.Console;
 using System;
 using System.Collections.Generic;
@@ -68,64 +68,14 @@ public static class ProxyService
     }
 
     /// <summary>
-    /// Deletes proxy files in the system proxy directory whose tool is not in
-    /// <paramref name="keepNames"/> (npm/npx are always kept). Called by 'nem
-    /// install' so proxies for tools that are no longer part of the env do not
-    /// linger. Other envs on this machine recreate their proxies on their next
-    /// 'nem install'.
-    /// </summary>
-    public static void PruneStaleProxies(IEnumerable<string> keepNames)
-    {
-        PruneStaleProxies(IOPathManager.System.ProxyDirPath, keepNames);
-    }
-
-    /// <summary>
-    /// Deletes proxy files in <paramref name="proxyDir"/> whose tool is not in
-    /// <paramref name="keepNames"/> (npm/npx are always kept).
-    /// </summary>
-    public static void PruneStaleProxies(string proxyDir, IEnumerable<string> keepNames)
-    {
-        if (!Directory.Exists(proxyDir))
-            return;
-
-        var keep = keepNames
-            .Where(name => !string.IsNullOrWhiteSpace(name))
-            .Select(name => name.Trim())
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        keep.Add("npm");
-        keep.Add("npx");
-
-        foreach (string file in Directory.EnumerateFiles(proxyDir))
-        {
-            // GetFileNameWithoutExtension also handles extensionless names (Unix proxies).
-            string baseName = Path.GetFileNameWithoutExtension(file);
-            if (keep.Contains(baseName))
-                continue;
-
-            try
-            {
-                File.Delete(file);
-            }
-            catch (Exception)
-            {
-                // Ignore locked files; the next install will try again.
-            }
-        }
-    }
-
-    /// <summary>
     /// Finds the nem env that contains the current directory and runs the tool in its context.
     /// Returns the tool's exit code.
     /// </summary>
     public static int CallToolInEnvContext(string tool, IReadOnlyList<string> args)
     {
-        string? envDir = null;
-
-        if (IOService.TryGetContainingEnv(Directory.GetCurrentDirectory(), out var nemJsonPath))
-        {
-            string configDir = Path.GetDirectoryName(nemJsonPath)!;
-            envDir = IOPathManager.Local(configDir).EnvDirPath;
-        }
+        string? envDir = IOPathManager.TryFindEnv(Directory.GetCurrentDirectory(), out IOPathManager.IOPathManagerEnv? env)
+            ? env.EnvDirPath
+            : null;
 
         return ExecuteTool(tool, args, envDir);
     }

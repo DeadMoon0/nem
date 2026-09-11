@@ -63,6 +63,8 @@ internal class InitCommand : AsyncCommand<InitCommandSettings>
             }
         }
 
+        WarnAboutOuterEnv(path, local);
+
         AnsiConsole.WriteLine("");
 
         Directory.CreateDirectory(path);
@@ -73,5 +75,26 @@ internal class InitCommand : AsyncCommand<InitCommandSettings>
         AnsiConsole.MarkupLine("[Gray50]To install the Node version use:[/] nem install");
         AnsiConsole.MarkupLine("[Gray50]To manage tools use:[/] nem tool");
         return 0;
+    }
+
+    /// <summary>
+    /// A nem.json shadows every env above it, so a second one below an existing
+    /// env silently takes over its whole subtree. That is legitimate (a monorepo
+    /// may want a different Node version per package) but almost never intended,
+    /// so it is called out instead of happening quietly.
+    /// </summary>
+    static void WarnAboutOuterEnv(string path, IOPathManager.IOPathManagerLocal local)
+    {
+        if (File.Exists(local.ConfigFilePath))
+            return; // Re-initializing this very env, nothing is being shadowed.
+
+        string? parent = Path.GetDirectoryName(path);
+        if (parent == null || !IOPathManager.TryFindEnv(parent, out IOPathManager.IOPathManagerEnv? outer))
+            return;
+
+        AnsiConsole.WriteLine("");
+        AnsiConsole.MarkupLine($"[yellow]Note: {Markup.Escape(outer.DirPath)} already holds an env.[/]");
+        AnsiConsole.MarkupLine($"[yellow]A second {Markup.Escape(local.ConfigFileName)} here shadows it, so its tools stop resolving below {Markup.Escape(path)}.[/]");
+        AnsiConsole.MarkupLine($"[yellow]To use the existing env instead, run [green]nem install[/] from anywhere inside it.[/]");
     }
 }

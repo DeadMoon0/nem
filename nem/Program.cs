@@ -34,6 +34,9 @@ internal class Program
             config.SetApplicationVersion(version);
             config.SetApplicationName("nem");
 
+            config.AddCommand<AuditCommand>("audit")
+                .WithDescription("Lists the known vulnerabilities in the env's installed tools. 'nem install' only prints the count.");
+
             config.AddCommand<InitCommand>("init")
                 .WithDescription("Creates a nem env (nem.json + .nenv folder) for a project.");
 

@@ -4,7 +4,6 @@ using Newtonsoft.Json;
 using Spectre.Console;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 
@@ -64,66 +63,33 @@ public static class IOService
     /// </summary>
     public static bool EnsureSystemDir()
     {
+        EnsureSystemDirectories();
+
+        if (ProxyDirIsOnPath())
+            return true;
+
+        AnsiConsole.MarkupLine("[red]The nem proxy directory is not in your PATH. Run [green]nem setup[/] first.[/]");
+        return false;
+    }
+
+    /// <summary>
+    /// Creates the nem system directory structure (cache, extract and proxy folders).
+    /// </summary>
+    public static void EnsureSystemDirectories()
+    {
         if (!Directory.Exists(IOPathManager.System.DirPath)) Directory.CreateDirectory(IOPathManager.System.DirPath);
         if (!Directory.Exists(IOPathManager.System.DownloadCacheDirPath)) Directory.CreateDirectory(IOPathManager.System.DownloadCacheDirPath);
         if (!Directory.Exists(IOPathManager.System.ExtractCacheDirPath)) Directory.CreateDirectory(IOPathManager.System.ExtractCacheDirPath);
         if (!Directory.Exists(IOPathManager.System.ProxyDirPath)) Directory.CreateDirectory(IOPathManager.System.ProxyDirPath);
-
-        string proxyDir = IOPathManager.System.ProxyDirPath;
-        bool onPath;
-        if (OperatingSystem.IsWindows())
-        {
-            // The proxy dir may live in either the machine PATH (nem setup) or the
-            // user PATH (added manually).
-            string machinePath = Environment.GetEnvironmentVariable("Path", EnvironmentVariableTarget.Machine) ?? "";
-            string userPath = Environment.GetEnvironmentVariable("Path", EnvironmentVariableTarget.User) ?? "";
-            onPath = SplitPath(machinePath)
-                .Concat(SplitPath(userPath))
-                .Any(entry => string.Equals(entry, proxyDir, StringComparison.OrdinalIgnoreCase));
-        }
-        else
-        {
-            string currentPath = Environment.GetEnvironmentVariable("PATH") ?? "";
-            onPath = SplitPath(currentPath).Any(entry => string.Equals(entry, proxyDir));
-        }
-
-        if (!onPath)
-        {
-            AnsiConsole.MarkupLine("[red]The nem proxy directory is not in your PATH. Run [green]nem setup[/] first.[/]");
-            return false;
-        }
-
-        return true;
-    }
-
-    static IEnumerable<string> SplitPath(string path)
-    {
-        char separator = OperatingSystem.IsWindows() ? ';' : ':';
-        return path.Split(new[] { separator }, StringSplitOptions.RemoveEmptyEntries)
-                   .Select(p => p.Trim())
-                   .Where(p => p.Length > 0);
     }
 
     /// <summary>
-    /// Walks up from the given directory looking for a nem.json (project root marker).
+    /// True when the nem proxy directory is listed in the PATH. Being listed is
+    /// not the same as winning - see <see cref="PathPrecedence"/> for that.
     /// </summary>
-    public static bool TryGetContainingEnv(string searchDirPath, [NotNullWhen(true)] out string? foundPath)
+    public static bool ProxyDirIsOnPath()
     {
-        var local = IOPathManager.Local(searchDirPath);
-
-        if (File.Exists(local.ConfigFilePath))
-        {
-            foundPath = local.ConfigFilePath;
-            return true;
-        }
-
-        string? parent = Path.GetDirectoryName(searchDirPath);
-        if (string.IsNullOrEmpty(parent) || parent == searchDirPath)
-        {
-            foundPath = null;
-            return false;
-        }
-
-        return TryGetContainingEnv(parent, out foundPath);
+        string proxyDir = IOPathManager.System.ProxyDirPath;
+        return PathPrecedence.StoredPathDirs().Any(entry => PathPrecedence.SamePath(entry, proxyDir));
     }
 }
