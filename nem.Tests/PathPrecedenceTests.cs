@@ -226,7 +226,7 @@ public class PathPrecedenceTests
     public void Windows_Path_Rules_Do_Not_Depend_On_The_Host()
     {
         // The registry PATH is edited with Windows rules even when the build runs on Linux.
-        Assert.True(PathPrecedence.SamePath(@"C:\Users\me\proxy\", @"c:/USERS/me/PROXY", isWindows: true));
+        Assert.True(PathPrecedence.SamePath(@"C:\Users\me\proxy\", @"c:\USERS\me\PROXY", isWindows: true));
         Assert.False(PathPrecedence.SamePath("/home/me/proxy", "/home/me/PROXY", isWindows: false));
         Assert.True(PathPrecedence.SamePath("/home/me/proxy/", "/home/me/proxy", isWindows: false));
     }
