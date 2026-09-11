@@ -77,7 +77,7 @@ public static class PathPrecedence
     /// <summary>
     /// The proxied tools shadowed on the stored PATH - what a newly opened
     /// terminal resolves. Empty when the proxy directory is not on the PATH at
-    /// all; that is <see cref="IOService.ProxyDirIsOnPath"/>'s question.
+    /// all; that is <see cref="IOService.ProxyDirIsOnStoredPath"/>'s question.
     /// </summary>
     public static IReadOnlyList<Shadow> FindShadowsOnStoredPath(IEnumerable<string>? expectedTools = null) =>
         FindShadowsOn(StoredPathDirs(), expectedTools);
@@ -129,11 +129,20 @@ public static class PathPrecedence
     /// </summary>
     public static void ReportProxyReachability(IEnumerable<string>? expectedTools = null)
     {
-        if (IsStaleTerminal(StoredPathDirs(), ProcessPathDirs(), IOPathManager.System.ProxyDirPath))
+        List<string> storedDirs = StoredPathDirs().ToList();
+        List<string> processDirs = ProcessPathDirs().ToList();
+        string proxyDir = IOPathManager.System.ProxyDirPath;
+
+        if (IsStaleTerminal(storedDirs, processDirs, proxyDir))
         {
             ReportStaleTerminal();
             return;
         }
+
+        // The proxies are reachable here, so the shadow check below still applies;
+        // the note only says that the next terminal will not be so lucky.
+        if (IsUnstoredTerminal(storedDirs, processDirs, proxyDir))
+            ReportUnstoredTerminal();
 
         ReportShadows(FindShadowsOnProcessPath(expectedTools));
     }
@@ -146,6 +155,26 @@ public static class PathPrecedence
     {
         return storedDirs.Any(dir => SamePath(dir, proxyDir))
             && !processDirs.Any(dir => SamePath(dir, proxyDir));
+    }
+
+    /// <summary>
+    /// The reverse of <see cref="IsStaleTerminal"/>: this terminal has the proxy
+    /// directory on its PATH but the stored PATH does not, so a new terminal will
+    /// not. That is what a shell profile entry looks like, and what the terminal
+    /// 'nem setup --uninstall' ran in looks like afterwards.
+    /// </summary>
+    internal static bool IsUnstoredTerminal(IEnumerable<string> storedDirs, IEnumerable<string> processDirs, string proxyDir)
+    {
+        return !storedDirs.Any(dir => SamePath(dir, proxyDir))
+            && processDirs.Any(dir => SamePath(dir, proxyDir));
+    }
+
+    static void ReportUnstoredTerminal()
+    {
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("[yellow]Note: the nem proxy directory is on this terminal's PATH but not on the stored[/]");
+        AnsiConsole.MarkupLine("[yellow]PATH, so a new terminal will not find the proxies.[/]");
+        AnsiConsole.MarkupLine("[yellow]Run [green]nem setup[/] to make it permanent.[/]");
     }
 
     static void ReportStaleTerminal()

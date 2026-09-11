@@ -191,7 +191,7 @@ public static class ToolService
         AnsiConsole.MarkupLine($"[gray]env      : {Markup.Escape(envDir)}[/]");
         AnsiConsole.MarkupLine($"[gray]proxies  : {Markup.Escape(IOPathManager.System.ProxyDirPath)}[/]");
         AnsiConsole.MarkupLine($"[gray]provides : {Markup.Escape(proxied.Count == 0 ? "(nothing)" : string.Join(", ", proxied))}[/]");
-        AnsiConsole.MarkupLine($"[gray]on PATH  : {(PathPrecedence.ProcessPathDirs().Any(dir => PathPrecedence.SamePath(dir, IOPathManager.System.ProxyDirPath)) ? "yes" : "no")}[/]");
+        AnsiConsole.MarkupLine($"[gray]on PATH  : {(IOService.ProxyDirIsOnProcessPath() ? "yes" : "no")}[/]");
         return 0;
     }
 

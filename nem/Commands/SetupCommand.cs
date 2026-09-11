@@ -74,7 +74,7 @@ internal class SetupCommand : AsyncCommand<SetupCommandSettings>
             // The elevated run is a separate process in its own window, so its exit
             // code is the only thing we see of it. Confirm the PATH really changed
             // rather than reporting success on its word.
-            bool onPath = IOService.ProxyDirIsOnPath();
+            bool onPath = IOService.ProxyDirIsOnStoredPath();
             if (settings.Uninstall ? !onPath : onPath)
             {
                 ReportPathChanged(settings.Uninstall);

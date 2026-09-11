@@ -213,6 +213,27 @@ public class PathPrecedenceTests
     }
 
     [Fact]
+    public void A_Terminal_That_Outlived_The_Uninstall_Is_Detected()
+    {
+        // Or a shell profile put the proxy dir there: either way the next terminal lacks it.
+        string[] stored = [@"C:\npm"];
+        string[] process = [ProxyDir, @"C:\npm"];
+
+        Assert.True(PathPrecedence.IsUnstoredTerminal(stored, process, ProxyDir));
+    }
+
+    [Fact]
+    public void A_Stored_Proxy_Dir_Is_Not_Unstored()
+    {
+        string[] both = [ProxyDir, @"C:\npm"];
+        string[] stale = [@"C:\npm"];
+
+        Assert.False(PathPrecedence.IsUnstoredTerminal(both, both, ProxyDir));
+        Assert.False(PathPrecedence.IsUnstoredTerminal(both, stale, ProxyDir));
+        Assert.False(PathPrecedence.IsUnstoredTerminal(stale, stale, ProxyDir));
+    }
+
+    [Fact]
     public void Nothing_Is_Shadowed_When_The_Env_Proxies_No_Tools_Yet()
     {
         var path = new[]

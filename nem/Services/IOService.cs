@@ -58,14 +58,17 @@ public static class IOService
     }
 
     /// <summary>
-    /// Ensures the nem system directories exist and that the proxy directory is on the PATH.
-    /// Returns false (and prints a hint) when the PATH entry is missing.
+    /// Ensures the nem system directories exist and that the proxy directory is
+    /// reachable: on the stored PATH (every new terminal gets it) or on this
+    /// process's PATH (a shell profile put it there, or the terminal predates a
+    /// 'nem setup --uninstall'). Returns false (and prints a hint) only when it is
+    /// on neither, i.e. 'nem setup' never ran.
     /// </summary>
     public static bool EnsureSystemDir()
     {
         EnsureSystemDirectories();
 
-        if (ProxyDirIsOnPath())
+        if (ProxyDirIsOnStoredPath() || ProxyDirIsOnProcessPath())
             return true;
 
         AnsiConsole.MarkupLine("[red]The nem proxy directory is not in your PATH. Run [green]nem setup[/] first.[/]");
@@ -84,12 +87,24 @@ public static class IOService
     }
 
     /// <summary>
-    /// True when the nem proxy directory is listed in the PATH. Being listed is
-    /// not the same as winning - see <see cref="PathPrecedence"/> for that.
+    /// True when the nem proxy directory is listed in the stored PATH, the one a
+    /// newly opened terminal gets. This is what 'nem setup' writes and what its
+    /// '--uninstall' removes, so it is the yardstick for both. Being listed is not
+    /// the same as winning - see <see cref="PathPrecedence"/> for that.
     /// </summary>
-    public static bool ProxyDirIsOnPath()
+    public static bool ProxyDirIsOnStoredPath() =>
+        ContainsProxyDir(PathPrecedence.StoredPathDirs());
+
+    /// <summary>
+    /// True when the nem proxy directory is listed in the PATH this process was
+    /// started with, so typing a proxied tool name in this terminal reaches nem.
+    /// </summary>
+    public static bool ProxyDirIsOnProcessPath() =>
+        ContainsProxyDir(PathPrecedence.ProcessPathDirs());
+
+    static bool ContainsProxyDir(IEnumerable<string> pathDirs)
     {
         string proxyDir = IOPathManager.System.ProxyDirPath;
-        return PathPrecedence.StoredPathDirs().Any(entry => PathPrecedence.SamePath(entry, proxyDir));
+        return pathDirs.Any(entry => PathPrecedence.SamePath(entry, proxyDir));
     }
 }

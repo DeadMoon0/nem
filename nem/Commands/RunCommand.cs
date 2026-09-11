@@ -2,7 +2,6 @@ using nem.Services;
 using Spectre.Console.Cli;
 using System.ComponentModel;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace nem.Commands;
 
@@ -13,13 +12,13 @@ internal class RunCommandSettings : CommandSettings
     public required string ToolName { get; init; }
 }
 
-internal class RunCommand : AsyncCommand<RunCommandSettings>
+internal class RunCommand : Command<RunCommandSettings>
 {
-    protected override async Task<int> ExecuteAsync(CommandContext context, RunCommandSettings settings, CancellationToken cancellationToken)
+    protected override int Execute(CommandContext context, RunCommandSettings settings, CancellationToken cancellationToken)
     {
-        if (!IOService.EnsureSystemDir())
-            return 1;
-
+        // Deliberately not gated on 'nem setup': running a tool needs only the env
+        // (or the system fallback), not the proxies. This is the escape hatch the
+        // PATH warnings point to, so it has to work when the PATH is not right.
         return ProxyService.CallToolInEnvContext(settings.ToolName, context.Remaining.Raw);
     }
 }

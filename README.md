@@ -34,6 +34,8 @@ nem setup
 
 `nem setup` puts the nem proxy directory (`%APPDATA%\nem\proxy` on Windows, `~/.config/nem/proxy` on Unix) on your PATH. Every tool that belongs to a nem env gets a small proxy script in that directory, so tools can be invoked from any folder. On Windows this patches the machine PATH (one elevated run is enough for everyone on the box); on Unix it appends an `export PATH=...` line to your shell rc files (`~/.profile`, plus `~/.bashrc` / `~/.zshrc` / `~/.zprofile` when they exist), so just run it once per user.
 
+`nem setup --uninstall` takes the proxy directory back out of the PATH and deletes the proxies. The env folders and the download caches stay where they are.
+
 ## Usage
 
 ### Initialize a project
