@@ -47,7 +47,7 @@ internal class Program
                 .WithDescription("Runs a tool from the nem env (or the system fallback). Tool arguments follow the tool name.");
 
             config.AddCommand<SetupCommand>("setup")
-                .WithDescription("Adds the nem proxy directory to your PATH. Only needs to be run once.");
+                .WithDescription("Adds the nem proxy directory to your PATH. Only needs to be run once; '--uninstall' takes it back out.");
 
             config.AddCommand<UpdateCommand>("update")
                 .WithDescription("Updates the env: a Node version ('22'), a tool ('typescript', '@angular/cli@22'), or 'all'. Without arguments it reviews the available updates interactively.");
