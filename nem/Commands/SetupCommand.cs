@@ -338,12 +338,15 @@ internal class SetupCommand : AsyncCommand<SetupCommandSettings>
     /// <summary>
     /// The PATH entries except <paramref name="entry"/>, trimmed and with blanks
     /// dropped. A trailing separator does not make an entry a different one.
+    /// The value being edited is always the Windows machine PATH, so entries are
+    /// compared with Windows rules whatever OS this happens to run on (the tests
+    /// run on Linux too).
     /// </summary>
     static List<string> SplitKeeping(string currentPath, string entry) =>
         currentPath
             .Split(';', StringSplitOptions.RemoveEmptyEntries)
             .Select(existing => existing.Trim())
-            .Where(existing => existing.Length > 0 && !PathPrecedence.SamePath(existing, entry))
+            .Where(existing => existing.Length > 0 && !PathPrecedence.SamePath(existing, entry, isWindows: true))
             .ToList();
 
     /// <summary>

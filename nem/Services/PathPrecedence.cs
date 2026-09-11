@@ -277,14 +277,25 @@ public static class PathPrecedence
         ? StringComparer.OrdinalIgnoreCase
         : StringComparer.Ordinal;
 
-    internal static bool SamePath(string a, string b)
+    /// <summary>Whether two PATH entries name the same directory on this OS.</summary>
+    internal static bool SamePath(string a, string b) =>
+        SamePath(a, b, OperatingSystem.IsWindows());
+
+    /// <summary>
+    /// Whether two PATH entries name the same directory under the rules of the
+    /// given platform, independent of the OS the comparison runs on. Windows
+    /// ignores case and accepts both separators; Unix is exact. Callers editing a
+    /// PATH that belongs to a specific platform (the Windows registry PATH) pass
+    /// that platform rather than the host's.
+    /// </summary>
+    internal static bool SamePath(string a, string b, bool isWindows)
     {
-        StringComparison comparison = OperatingSystem.IsWindows()
+        StringComparison comparison = isWindows
             ? StringComparison.OrdinalIgnoreCase
             : StringComparison.Ordinal;
-        return string.Equals(Trim(a), Trim(b), comparison);
+        return string.Equals(Trim(a, isWindows), Trim(b, isWindows), comparison);
 
-        static string Trim(string path) =>
-            path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        static string Trim(string path, bool isWindows) =>
+            isWindows ? path.TrimEnd('\\', '/') : path.TrimEnd('/');
     }
 }
