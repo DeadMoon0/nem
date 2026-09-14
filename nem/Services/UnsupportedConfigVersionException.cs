@@ -27,9 +27,15 @@ public class UnsupportedConfigVersionException : Exception
     /// <summary>The file it came from, when it was read from one.</summary>
     public string? ConfigFilePath { get; }
 
+    /// <summary>
+    /// The message carries the way out as well as the problem, because this is the
+    /// only place that knows both. Nothing above needs to recognize the type to say
+    /// something useful about it.
+    /// </summary>
     static string BuildMessage(int fileVersion, string? configFilePath)
     {
         string what = configFilePath == null ? "That nem config" : $"'{configFilePath}'";
-        return $"{what} uses config schema version {fileVersion}, but this nem only reads up to version {NemConfigVersion.Current}.";
+        return $"{what} uses config schema version {fileVersion}, but this nem only reads up to version {NemConfigVersion.Current}. "
+             + "Update nem with 'dotnet tool update -g nem' to read it.";
     }
 }

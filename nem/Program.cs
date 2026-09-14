@@ -1,7 +1,5 @@
 using nem.Commands;
 using nem.Commands.Tool;
-using nem.Services;
-using Spectre.Console;
 using Spectre.Console.Cli;
 using System.Reflection;
 
@@ -35,7 +33,6 @@ internal class Program
 
             config.SetApplicationVersion(version);
             config.SetApplicationName("nem");
-            config.SetExceptionHandler(HandleException);
 
             config.AddCommand<AuditCommand>("audit")
                 .WithDescription("Lists the known vulnerabilities in the env's installed tools. 'nem install' only prints the count.");
@@ -71,23 +68,5 @@ internal class Program
         });
 
         return app.Run(args);
-    }
-
-    /// <summary>
-    /// A config from a newer nem is a situation the user can fix, so it gets a plain
-    /// sentence instead of a stack trace. Everything else is still an unexpected
-    /// failure and is rendered the way Spectre would have rendered it.
-    /// </summary>
-    static int HandleException(System.Exception exception, ITypeResolver? resolver)
-    {
-        if (exception is UnsupportedConfigVersionException configVersion)
-        {
-            AnsiConsole.MarkupLine($"[red]{Markup.Escape(configVersion.Message)}[/]");
-            AnsiConsole.MarkupLine("[red]Update nem with [green]dotnet tool update -g nem[/] to read it.[/]");
-            return 1;
-        }
-
-        AnsiConsole.WriteException(exception);
-        return -1;
     }
 }
