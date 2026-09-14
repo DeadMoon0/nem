@@ -207,6 +207,7 @@ $ nem install
  * ...
  */
 {
+  "Version": 1,
   "NodeVersion": "18.12.0",
   "Tools": [
     { "ToolName": "@angular/cli", "ToolVersion": "15.2.11" },
@@ -218,6 +219,14 @@ $ nem install
 
 The file is JSONC, so `//` and `/* */` comments are allowed - handy for saying *why*
 a version is pinned. `nem init` writes a short header explaining what the file is.
+
+`Version` is the **config schema** version, not the nem version - it only changes when
+the shape of the file changes, and nem maintains it for you. It exists so the format
+can grow later without guesswork: a config written by a newer nem than the one you
+have is refused with a plain "update nem" message instead of being read halfway and
+saved back with the unknown parts dropped. A config with no `Version` (anything
+written before this existed) counts as version 1, and is stamped the next time nem
+saves it.
 
 > Envs created before JSONC support carry a plain `nem.json`. Those keep working
 > unchanged: nem reads either name (preferring `nem.jsonc` if both are present) and

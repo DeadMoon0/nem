@@ -31,21 +31,39 @@ public static class NemConfigFile
          *
          * Comments are allowed in this file, but nem rewrites it on "nem update"
          * and "nem tool", and only this header survives that.
+         *
+         * "Version" is the config schema version. nem maintains it - leave it alone.
          */
         """.ReplaceLineEndings();
 
     /// <summary>
     /// The config a file's content declares. Comments are skipped, and content that
-    /// holds nothing at all is an empty config, the same as "{}".
+    /// holds nothing at all is an empty config, the same as "{}". A config from a
+    /// schema this nem does not know is refused rather than half-read.
     /// </summary>
-    public static NemConfig Parse(string content) =>
-        string.IsNullOrWhiteSpace(content)
+    /// <exception cref="UnsupportedConfigVersionException">
+    /// The content declares a schema newer than <see cref="NemConfigVersion.Current"/>.
+    /// </exception>
+    public static NemConfig Parse(string content)
+    {
+        NemConfig config = string.IsNullOrWhiteSpace(content)
             ? new NemConfig()
             : JsonConvert.DeserializeObject<NemConfig>(content) ?? new NemConfig();
 
+        if (config.Version > NemConfigVersion.Current)
+            throw new UnsupportedConfigVersionException(config.Version);
+
+        // An older schema is brought up to the current one here, before the config
+        // reaches any caller, so the rest of nem only ever sees the current shape.
+        // Version 1 is still the only schema, so there is nothing to migrate yet.
+        return config;
+    }
+
     /// <summary>
-    /// The text a config file gets. The header only goes into a file that may hold
-    /// comments, so serializing for a '.json' target still yields plain JSON.
+    /// The text a config file gets, for the config exactly as given - including its
+    /// <see cref="NemConfig.Version"/>, which <see cref="Write"/> stamps beforehand.
+    /// The header only goes into a file that may hold comments, so serializing for a
+    /// '.json' target still yields plain JSON.
     /// </summary>
     public static string Serialize(NemConfig config, bool withHeader)
     {
@@ -57,9 +75,30 @@ public static class NemConfigFile
     public static bool AllowsComments(string configFilePath) =>
         string.Equals(Path.GetExtension(configFilePath), ".jsonc", StringComparison.OrdinalIgnoreCase);
 
-    public static NemConfig Read(string configFilePath) =>
-        Parse(File.ReadAllText(configFilePath));
+    /// <exception cref="UnsupportedConfigVersionException">
+    /// The file declares a schema newer than <see cref="NemConfigVersion.Current"/>.
+    /// </exception>
+    public static NemConfig Read(string configFilePath)
+    {
+        try
+        {
+            return Parse(File.ReadAllText(configFilePath));
+        }
+        catch (UnsupportedConfigVersionException e)
+        {
+            // Parse only sees the text; name the file the user has to look at.
+            throw new UnsupportedConfigVersionException(e.FileVersion, configFilePath);
+        }
+    }
 
-    public static void Write(string configFilePath, NemConfig config) =>
+    /// <summary>
+    /// Writes the config, stamped with the schema nem is writing. Stamping here and
+    /// not in <see cref="Serialize"/> keeps the object and the file in agreement:
+    /// after a save, the config in memory says what is actually on disk.
+    /// </summary>
+    public static void Write(string configFilePath, NemConfig config)
+    {
+        config.Version = NemConfigVersion.Current;
         File.WriteAllText(configFilePath, Serialize(config, AllowsComments(configFilePath)));
+    }
 }

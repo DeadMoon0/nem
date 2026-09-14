@@ -535,8 +535,10 @@ public static class ToolService
         {
             config = NemConfigFile.Read(env.ConfigFilePath);
         }
-        catch (Exception)
+        catch (Exception e) when (e is not UnsupportedConfigVersionException)
         {
+            // A config nem cannot read at all reads as "no env here", but one from a
+            // newer nem is a different problem and has to say so.
             config = null;
         }
         return config != null;

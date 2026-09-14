@@ -22,7 +22,7 @@
 		<RepositoryUrl>https://github.com/DeadMoon0/NEM.git</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
 		<Copyright>Copyright (c) DeadMoon0 2026</Copyright>
-		<PackageReleaseNotes>The project config is now JSONC: 'nem init' creates nem.jsonc with an explanatory header, and comments are allowed in it. Existing nem.json envs keep working unchanged - nem reads either name and writes back to the one the project already has.</PackageReleaseNotes>
+		<PackageReleaseNotes>The project config is now JSONC: 'nem init' creates nem.jsonc with an explanatory header, and comments are allowed in it. The config also carries a schema version now, so a config written by a newer nem is refused with a clear message instead of being half-read. Existing nem.json envs keep working unchanged - nem reads either name and writes back to the one the project already has.</PackageReleaseNotes>
 		<PackAsTool>True</PackAsTool>
 		<ToolCommandName>nem</ToolCommandName>
 		<!-- The proxy templates (NAME.bat/NAME.ps1/NAME) ship under tools/ on purpose; -->

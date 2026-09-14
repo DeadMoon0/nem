@@ -21,6 +21,7 @@ public class IoServiceTests
         string configPath = Path.Combine(tmp.FullName, "nem.jsonc");
         NemConfig config = NemConfigFile.Read(configPath);
         Assert.Equal("22.23.2", config.NodeVersion);
+        Assert.Equal(NemConfigVersion.Current, config.Version);
         Assert.Contains(NemConfigFile.Header, File.ReadAllText(configPath));
         Assert.True(Directory.Exists(Path.Combine(tmp.FullName, ".nenv")));
 
@@ -75,6 +76,8 @@ public class IoServiceTests
         NemConfig config = NemConfigFile.Parse(text);
         Assert.Equal("22.23.2", config.NodeVersion);
         Assert.Single(config.Tools);
+        // Rewriting an unversioned config is what brings it onto the versioned schema.
+        Assert.Equal(NemConfigVersion.Current, config.Version);
     }
 
     [Fact]

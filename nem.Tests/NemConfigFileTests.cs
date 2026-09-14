@@ -1,6 +1,7 @@
 using Xunit;
 using nem.Common.Models;
 using nem.Services;
+using System;
 
 namespace nem.Tests;
 
@@ -108,5 +109,84 @@ public class NemConfigFileTests
     public void The_Header_Uses_This_Machines_Line_Endings()
     {
         Assert.Equal(NemConfigFile.Header.ReplaceLineEndings(), NemConfigFile.Header);
+    }
+
+    // ---- schema version ----
+
+    [Fact]
+    public void A_Config_Without_A_Version_Reads_As_The_Initial_Schema()
+    {
+        // Every config written before versioning existed looks like this. It must not
+        // pass as the current schema, or a future nem would skip its migration.
+        NemConfig config = NemConfigFile.Parse("""{ "NodeVersion": "22.23.2" }""");
+
+        Assert.Equal(NemConfigVersion.Initial, config.Version);
+    }
+
+    [Fact]
+    public void A_Stated_Version_Is_Read_Back()
+    {
+        NemConfig config = NemConfigFile.Parse($$"""{ "Version": {{NemConfigVersion.Current}}, "NodeVersion": "22.23.2" }""");
+
+        Assert.Equal(NemConfigVersion.Current, config.Version);
+    }
+
+    [Fact]
+    public void A_Config_From_A_Newer_Nem_Is_Refused_Rather_Than_Half_Read()
+    {
+        int tooNew = NemConfigVersion.Current + 1;
+
+        var error = Assert.Throws<UnsupportedConfigVersionException>(
+            () => NemConfigFile.Parse($$"""{ "Version": {{tooNew}}, "NodeVersion": "22.23.2" }"""));
+
+        Assert.Equal(tooNew, error.FileVersion);
+        Assert.Equal(NemConfigVersion.Current, error.SupportedVersion);
+        Assert.Contains(tooNew.ToString(), error.Message);
+    }
+
+    [Fact]
+    public void Refusing_A_Newer_Config_Names_The_File_It_Came_From()
+    {
+        using var tmp = new TempDir();
+        string configPath = Path.Combine(tmp.FullName, "nem.jsonc");
+        File.WriteAllText(configPath, $$"""{ "Version": {{NemConfigVersion.Current + 1}} }""");
+
+        var error = Assert.Throws<UnsupportedConfigVersionException>(() => NemConfigFile.Read(configPath));
+
+        Assert.Equal(configPath, error.ConfigFilePath);
+        Assert.Contains(configPath, error.Message);
+    }
+
+    [Fact]
+    public void Writing_Stamps_The_Current_Schema_Onto_The_Config_And_The_File()
+    {
+        using var tmp = new TempDir();
+        string configPath = Path.Combine(tmp.FullName, "nem.jsonc");
+        var config = new NemConfig { Version = NemConfigVersion.Initial, NodeVersion = "22.23.2" };
+
+        NemConfigFile.Write(configPath, config);
+
+        // The object and the file agree afterwards, so nothing has to remember to stamp it.
+        Assert.Equal(NemConfigVersion.Current, config.Version);
+        Assert.Equal(NemConfigVersion.Current, NemConfigFile.Read(configPath).Version);
+    }
+
+    [Fact]
+    public void Serializing_Writes_The_Version_The_Config_Carries()
+    {
+        // Serialize stays pure so a config from an older schema can be rendered as-is.
+        string text = NemConfigFile.Serialize(
+            new NemConfig { Version = NemConfigVersion.Initial, NodeVersion = "22.23.2" }, withHeader: false);
+
+        Assert.Contains($"\"Version\": {NemConfigVersion.Initial}", text);
+    }
+
+    [Fact]
+    public void The_Version_Leads_The_File_So_It_Is_Visible_At_A_Glance()
+    {
+        string text = NemConfigFile.Serialize(SampleConfig(), withHeader: false);
+
+        Assert.True(text.IndexOf("\"Version\"", StringComparison.Ordinal)
+                  < text.IndexOf("\"NodeVersion\"", StringComparison.Ordinal));
     }
 }

@@ -52,6 +52,7 @@ public class ConfigSerializationTests
 
         Assert.Null(parsed.NodeVersion);
         Assert.Empty(parsed.Tools);
+        Assert.Equal(NemConfigVersion.Initial, parsed.Version);
     }
 
     [Fact]
