@@ -55,6 +55,9 @@ internal class Program
             config.AddCommand<UpdateCommand>("update")
                 .WithDescription("Updates the env: a Node version ('22'), a tool ('typescript', '@angular/cli@22'), or 'all'. Without arguments it reviews the available updates interactively.");
 
+            config.AddCommand<WhichCommand>("which")
+                .WithDescription("Explains which copy of a tool a typed name runs - global, env or a project copy - and why.");
+
             config.AddBranch("tool", c =>
             {
                 c.SetDescription("Manages the tools of the env of the current directory.");

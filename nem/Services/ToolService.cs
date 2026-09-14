@@ -178,8 +178,13 @@ public static class ToolService
 
         if (anyLocal)
         {
-            AnsiConsole.MarkupLine("[yellow]A project node_modules here declares the tool itself and takes over from the env.[/]");
-            AnsiConsole.MarkupLine("[yellow]That is how npm tools work; the nem config governs the env copy, the project governs its own.[/]");
+            // Deliberately states what exists, not what wins: 'npm run' always uses
+            // the project copy, and a CLI that hands over to a local install (the
+            // Angular CLI does) will too - but a tool like tsc just runs the env
+            // copy. Claiming it always takes over would be wrong for those.
+            AnsiConsole.MarkupLine("[yellow]A project node_modules nearer this folder carries its own copy of the tool.[/]");
+            AnsiConsole.MarkupLine("[yellow]'npm run' scripts use that copy, and CLIs that hand over to a local install do too.[/]");
+            AnsiConsole.MarkupLine("[yellow]Run [green]nem which <tool>[/] to see which copy a typed name reaches.[/]");
         }
 
         // Name the directories the Command column is talking about, and what nem
@@ -242,9 +247,11 @@ public static class ToolService
         var problems = bins.Where(unreachable.ContainsKey).Select(bin => unreachable[bin]).ToList();
         if (problems.Count == 0)
         {
-            // The name reaches nem; a project copy still decides what nem launches.
+            // "local copy", not "local": nem still starts the env copy. Whether the
+            // project one takes over is the tool's business, not something nem can
+            // promise - see the note printed under the table.
             return localVersion != null && !string.Equals(localVersion, declaredVersion, StringComparison.OrdinalIgnoreCase)
-                ? $"[yellow]local {Markup.Escape(localVersion)}[/]"
+                ? $"[green]via nem[/] [yellow](local copy {Markup.Escape(localVersion)})[/]"
                 : "[green]via nem[/]";
         }
 

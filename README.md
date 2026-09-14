@@ -133,13 +133,19 @@ $ nem run ng serve
 # falls back to the system tool of the same name.
 ```
 
-#### A project's own copy wins
+#### Which copy runs
 
-The tools in `nem.jsonc` are the env's copy: what runs when the project does not
-ship the tool itself. npm CLIs resolve the nearest `node_modules` before anything
-global, so once a workspace declares the same package in its `package.json`, that
-copy decides the version there - `nem.jsonc` still governs the env copy, not the
-project's.
+A tool name can reach three different copies:
+
+- **global** - no env above the folder (or the proxy never gets the call), so the
+  system tool runs
+- **env** - the copy `nem.jsonc` declares, installed in `.nenv/`
+- **project** - a copy in a `node_modules` nearer the folder than the env
+
+nem always starts the **env** copy. Whether a **project** copy takes over from
+there is the tool's own behaviour, not something nem decides: `npm run` scripts
+always use it, and CLIs that hand over to a local install do too - the Angular
+CLI is one. A tool like `tsc` just runs the env copy.
 
 ```bash
 $ cd my-repo            # nem.jsonc pins @angular/cli 20.3.11
@@ -148,12 +154,30 @@ $ ng --version
 
 $ cd frontend           # package.json: "@angular/cli": "^20.3.11"
 $ ng --version
-20.3.37                 # the workspace copy, pinned by its package-lock.json
+20.3.37                 # the Angular CLI handed over to the project copy
 ```
 
-This is deliberate: forcing the env version here would build with a different
-tool than the project's lockfile pins, and than CI uses. `nem tool list` reports
-it as `local <version>` so the difference is visible instead of surprising.
+nem does not force its own version here: that would build with a different tool
+than the project's lockfile pins, and than CI uses.
+
+`nem which <tool>` answers which copy a name reaches and why, so a surprising
+version can be traced instead of guessed at:
+
+```bash
+$ nem which ng
+ng  ->  env, with a project copy 20.3.37 nearer the folder
+C:\...\my-repo\.nenv\ng.cmd
+
+  1  typed name    C:\...\nem\proxy\ng
+  2  env           C:\...\my-repo
+  3  env copy      C:\...\my-repo\.nenv\ng.cmd
+> 4  project copy  20.3.37 in C:\...\frontend\node_modules\@angular\cli
+```
+
+The `>` marks the step that decided. The same chain names the failure cases:
+`no proxy` when the name never reaches nem, `answered by <dir>` when an earlier
+PATH entry wins, and `not installed in this env` when the env does not carry the
+tool. `nem tool list` shows the short form, `via nem (local copy <version>)`.
 
 ### Update the env
 ```bash
@@ -260,6 +284,8 @@ proxy dir on PATH (e.g. %APPDATA%\nem\proxy\ng.bat on Windows,
 ```
 
 Proxies exist as `ng`, `ng.bat` (cmd) and `ng.ps1` (PowerShell). `nem install` re-creates the proxies for `npm`, `npx` and every tool in `nem.jsonc`, so a fresh checkout plus `nem install` makes all declared tools work.
+
+Both routing and `nem which` ask the same resolver for that decision, so what runs and what is explained cannot drift apart - see [Which copy runs](#which-copy-runs).
 
 **4. Tool installation** - npm-powered
 ```

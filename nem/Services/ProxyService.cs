@@ -73,38 +73,29 @@ public static class ProxyService
     /// </summary>
     public static int CallToolInEnvContext(string tool, IReadOnlyList<string> args)
     {
-        string? envDir = IOPathManager.TryFindEnv(Directory.GetCurrentDirectory(), out IOPathManager.IOPathManagerEnv? env)
-            ? env.EnvDirPath
-            : null;
-
-        return ExecuteTool(tool, args, envDir);
+        // The same decision 'nem which' explains, so what runs is what it reports.
+        return ExecuteTool(ToolResolver.Resolve(Directory.GetCurrentDirectory(), tool), args);
     }
 
-    static int ExecuteTool(string toolName, IEnumerable<string> args, string? envDir)
+    static int ExecuteTool(ToolResolver.ToolResolution resolution, IEnumerable<string> args)
     {
-        string? resolvedToolPath;
+        string toolName = resolution.ToolName;
+        string? envDir = resolution.EnvDir;
 
-        if (envDir != null)
+        if (resolution.ExecutablePath == null)
         {
-            // Managed environment: resolve from .nenv directory
-            resolvedToolPath = ResolveToolInEnv(envDir, toolName);
-            if (resolvedToolPath == null)
-            {
-                AnsiConsole.MarkupLine($"[red]Error: Tool '{toolName}' is not available in the env.[/]");
-                AnsiConsole.MarkupLine($"Declare it with [green]nem tool add {toolName}[/] and run [green]nem install[/], or install it into the env directly.");
-                return 1;
-            }
-        }
-        else
-        {
-            // Global fallback: find real system tool (excluding nem proxies)
-            resolvedToolPath = ResolveSystemTool(toolName);
-            if (resolvedToolPath == null)
+            if (envDir == null)
             {
                 AnsiConsole.MarkupLine($"[red]Error: Tool '{toolName}' not found on PATH.[/]");
                 return 1;
             }
+
+            AnsiConsole.MarkupLine($"[red]Error: Tool '{toolName}' is not available in the env.[/]");
+            AnsiConsole.MarkupLine($"Declare it with [green]nem tool add {toolName}[/] and run [green]nem install[/], or install it into the env directly.");
+            return 1;
         }
+
+        string resolvedToolPath = resolution.ExecutablePath;
 
         var psi = new ProcessStartInfo
         {
