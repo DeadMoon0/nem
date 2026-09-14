@@ -21,7 +21,13 @@ public class ToolResolverTests
             $"{{\"NodeVersion\":\"22.0.0\",\"Tools\":[{{\"ToolName\":\"{packageName}\",\"ToolVersion\":\"1.0.0\"}}]}}");
 
         string envDir = Path.Combine(root, ".nenv");
-        string modules = Path.Combine(envDir, "node_modules", Path.Combine(packageName.Split('/')));
+
+        // The env's modules root is not 'node_modules' everywhere - Unix installs
+        // under lib/. Asking the layout keeps the fixture the same shape as a real
+        // install on whichever host the tests run.
+        string modules = Path.Combine(
+            NodeEnvLayout.Create(envDir).ModulesRoot,
+            Path.Combine(packageName.Split('/')));
         Directory.CreateDirectory(modules);
         string binMap = string.Join(",", bins.Select(bin => $"\"{bin}\":\"bin.js\""));
         File.WriteAllText(Path.Combine(modules, "package.json"), $"{{\"version\":\"1.0.0\",\"bin\":{{{binMap}}}}}");
