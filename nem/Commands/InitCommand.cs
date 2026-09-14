@@ -1,7 +1,6 @@
 using nem.Common;
 using nem.Common.Models;
 using nem.Services;
-using Newtonsoft.Json;
 using Spectre.Console;
 using System;
 using Spectre.Console.Cli;
@@ -48,22 +47,26 @@ internal class InitCommand : AsyncCommand<InitCommandSettings>
         AnsiConsole.MarkupLine($"[gray]Node Version: [green]{version}[/][/]");
 
         var local = IOPathManager.Local(path);
-        if (File.Exists(local.ConfigFilePath))
+        // An env already here keeps its own config file name, so 'nem init' on a
+        // pre-'.jsonc' project reads and rewrites that file instead of adding a second one.
+        if (IOPathManager.TryGetEnv(path, out IOPathManager.IOPathManagerEnv? existingEnv))
         {
-            NemConfig? existing = JsonConvert.DeserializeObject<NemConfig>(File.ReadAllText(local.ConfigFilePath));
-            if (existing is { NodeVersion: { } } && !NodeDownloadingService.VersionSpecMatches(existing.NodeVersion, version))
+            NemConfig existing = NemConfigFile.Read(existingEnv.ConfigFilePath);
+            if (existing.NodeVersion is { } declared && !NodeDownloadingService.VersionSpecMatches(declared, version))
             {
-                string shown = NodeDownloadingService.IsPartialVersionSpec(existing.NodeVersion)
-                    ? await NodeDownloadingService.ResolveNodeVersionAsync(existing.NodeVersion)
-                    : existing.NodeVersion;
+                string shown = NodeDownloadingService.IsPartialVersionSpec(declared)
+                    ? await NodeDownloadingService.ResolveNodeVersionAsync(declared)
+                    : declared;
                 AnsiConsole.WriteLine("");
-                AnsiConsole.MarkupLine($"[red]A {local.ConfigFileName} already exists in {Markup.Escape(path)} with Node version [green]{shown}[/].[/]");
+                AnsiConsole.MarkupLine($"[red]A {existingEnv.ConfigFileName} already exists in {Markup.Escape(path)} with Node version [green]{shown}[/].[/]");
                 AnsiConsole.MarkupLine("[red]Use [green]nem update[/] to change the Node version of an existing env.[/]");
                 return 1;
             }
         }
-
-        WarnAboutOuterEnv(path, local);
+        else
+        {
+            WarnAboutOuterEnv(path, local);
+        }
 
         AnsiConsole.WriteLine("");
 
@@ -78,16 +81,14 @@ internal class InitCommand : AsyncCommand<InitCommandSettings>
     }
 
     /// <summary>
-    /// A nem.json shadows every env above it, so a second one below an existing
-    /// env silently takes over its whole subtree. That is legitimate (a monorepo
-    /// may want a different Node version per package) but almost never intended,
-    /// so it is called out instead of happening quietly.
+    /// A config shadows every env above it, so a second one below an existing env
+    /// silently takes over its whole subtree. That is legitimate (a monorepo may
+    /// want a different Node version per package) but almost never intended, so it
+    /// is called out instead of happening quietly. Only reached when this folder
+    /// holds no env yet, because re-initializing one shadows nothing new.
     /// </summary>
     static void WarnAboutOuterEnv(string path, IOPathManager.IOPathManagerLocal local)
     {
-        if (File.Exists(local.ConfigFilePath))
-            return; // Re-initializing this very env, nothing is being shadowed.
-
         string? parent = Path.GetDirectoryName(path);
         if (parent == null || !IOPathManager.TryFindEnv(parent, out IOPathManager.IOPathManagerEnv? outer))
             return;

@@ -6,14 +6,14 @@ using nem.Common.Models;
 namespace nem.Services;
 
 /// <summary>
-/// One tool's update status: what nem.json declares, what is installed, and the
+/// One tool's update status: what the nem config declares, what is installed, and the
 /// newest version supported by the reference Node version.
 /// </summary>
 public sealed class ToolUpdateEntry
 {
     public required string Name { get; init; }
 
-    /// <summary>The version declared in nem.json (the resolved concrete one).</summary>
+    /// <summary>The version declared in the nem config (the resolved concrete one).</summary>
     public required string DeclaredVersion { get; init; }
 
     /// <summary>The version actually installed in the env, or null.</summary>
@@ -37,7 +37,7 @@ public sealed class ToolUpdateEntry
 /// </summary>
 public sealed class UpdatePlan
 {
-    /// <summary>The Node version declared in nem.json ("" when unset).</summary>
+    /// <summary>The Node version declared in the nem config ("" when unset).</summary>
     public required string DeclaredNodeVersion { get; init; }
 
     /// <summary>The Node version installed in the env, or null.</summary>
@@ -134,7 +134,7 @@ public sealed class UpdatePlanner
     /// <summary>
     /// Plans an update for the env at envDir.
     /// </summary>
-    /// <param name="config">The project's nem.json.</param>
+    /// <param name="config">The project's nem config.</param>
     /// <param name="envDir">The .nenv directory.</param>
     /// <param name="nodeReference">
     /// The Node version that "newest supported" tool versions are resolved

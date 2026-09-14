@@ -1,6 +1,5 @@
 using nem.Common;
 using nem.Common.Models;
-using Newtonsoft.Json;
 using Spectre.Console;
 using System;
 using System.Collections.Generic;
@@ -15,27 +14,12 @@ public static class IOService
     {
         var local = IOPathManager.Local(path);
 
-        string configPath = local.ConfigFilePath;
-        if (File.Exists(configPath))
-        {
-            // Reconcile an existing config (e.g. one holding the partial spec "22")
-            // with the fully resolved version, keeping everything else (tools) intact.
-            NemConfig existing = JsonConvert.DeserializeObject<NemConfig>(File.ReadAllText(configPath)) ?? new NemConfig();
-            if (!string.Equals(existing.NodeVersion, version, System.StringComparison.OrdinalIgnoreCase))
-            {
-                existing.NodeVersion = version;
-                File.WriteAllText(configPath, JsonConvert.SerializeObject(existing, Formatting.Indented));
-                AnsiConsole.MarkupLine($"[yellow]Updated {local.ConfigFileName} to Node version {version}.[/]");
-            }
-            else
-            {
-                AnsiConsole.MarkupLine("[yellow]Skipped " + local.ConfigFileName + "-File because it already exists.[/]");
-            }
-        }
+        // An env created before the '.jsonc' config keeps its own file name, so
+        // re-initializing one never leaves two configs behind.
+        if (IOPathManager.TryGetEnv(path, out IOPathManager.IOPathManagerEnv? existingEnv))
+            ReconcileNodeVersion(existingEnv, version);
         else
-        {
-            File.WriteAllText(configPath, JsonConvert.SerializeObject(new NemConfig { NodeVersion = version }, Formatting.Indented));
-        }
+            NemConfigFile.Write(local.ConfigFilePath, new NemConfig { NodeVersion = version });
 
         string envPath = local.EnvDirPath;
         if (Directory.Exists(envPath))
@@ -55,6 +39,24 @@ public static class IOService
             string prefix = content.Length == 0 ? "" : (content.EndsWith("\n") ? "" : "\n");
             File.WriteAllText(gitIgnorePath, content + prefix + $"#nem\n/{entry}\n");
         }
+    }
+
+    /// <summary>
+    /// Brings an existing config (e.g. one holding the partial spec "22") in line
+    /// with the fully resolved version, keeping everything else (tools) intact.
+    /// </summary>
+    static void ReconcileNodeVersion(IOPathManager.IOPathManagerEnv env, string version)
+    {
+        NemConfig existing = NemConfigFile.Read(env.ConfigFilePath);
+        if (string.Equals(existing.NodeVersion, version, StringComparison.OrdinalIgnoreCase))
+        {
+            AnsiConsole.MarkupLine($"[yellow]Skipped {env.ConfigFileName} because it already exists.[/]");
+            return;
+        }
+
+        existing.NodeVersion = version;
+        NemConfigFile.Write(env.ConfigFilePath, existing);
+        AnsiConsole.MarkupLine($"[yellow]Updated {env.ConfigFileName} to Node version {version}.[/]");
     }
 
     /// <summary>

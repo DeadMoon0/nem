@@ -1,7 +1,6 @@
 using nem.Common;
 using nem.Common.Models;
 using nem.Services;
-using Newtonsoft.Json;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using System;
@@ -21,7 +20,7 @@ internal class UpdateCommandSettings : CommandSettings
 
     [CommandArgument(1, "[path]")]
     [DefaultValue(".")]
-    [Description("A folder inside the env. The nem.json is looked up from there upwards.")]
+    [Description("A folder inside the env. The nem config is looked up from there upwards.")]
     public required string Path { get; init; }
 
     [CommandOption("-t|--tools")]
@@ -60,7 +59,7 @@ internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
     /// the report is printed with the exact commands to apply the updates.
     /// </summary>
     static async Task<int> UpdateEverythingPromptedAsync(
-        NemConfig config, IOPathManager.IOPathManagerLocal local, string envDir, bool interactive)
+        NemConfig config, IOPathManager.IOPathManagerEnv local, string envDir, bool interactive)
     {
         UpdatePlan plan = await UpdatePlanner.Create().CreateAsync(config, envDir);
         RenderPlan(plan);
@@ -130,7 +129,7 @@ internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
     /// 'nem update all': set Node to the newest stable release and every tool to
     /// the newest version that release supports, then install.
     /// </summary>
-    static async Task<int> UpdateEverythingAsync(NemConfig config, IOPathManager.IOPathManagerLocal local, string envDir)
+    static async Task<int> UpdateEverythingAsync(NemConfig config, IOPathManager.IOPathManagerEnv local, string envDir)
     {
         string version;
         try
@@ -165,7 +164,7 @@ internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
     /// only touched with --tools (or an interactive confirmation).
     /// </summary>
     static async Task<int> UpdateNodeAsync(
-        NemConfig config, IOPathManager.IOPathManagerLocal local, string envDir,
+        NemConfig config, IOPathManager.IOPathManagerEnv local, string envDir,
         string spec, bool toolsFlag, bool interactive)
     {
         string version;
@@ -212,7 +211,7 @@ internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
     /// given version, or to the newest version supported by the declared Node.
     /// </summary>
     static async Task<int> UpdateToolAsync(
-        NemConfig config, IOPathManager.IOPathManagerLocal local, string envDir, string spec)
+        NemConfig config, IOPathManager.IOPathManagerEnv local, string envDir, string spec)
     {
         if (!ToolService.TryParsePackageSpec(spec, out string? name, out string? version) ||
             name == null || !ToolService.IsValidPackageName(name))
@@ -300,10 +299,9 @@ internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
         return hasUpdate ? $"[red]{latest}[/]" : $"[green]{latest}[/]";
     }
 
-    static NemConfig LoadConfig(IOPathManager.IOPathManagerLocal local) =>
-        JsonConvert.DeserializeObject<NemConfig>(File.ReadAllText(local.ConfigFilePath)) ?? new NemConfig();
+    static NemConfig LoadConfig(IOPathManager.IOPathManagerEnv env) =>
+        NemConfigFile.Read(env.ConfigFilePath);
 
-    static void SaveConfig(IOPathManager.IOPathManagerLocal local, NemConfig config) =>
-        File.WriteAllText(local.ConfigFilePath,
-            JsonConvert.SerializeObject(config, Formatting.Indented) + Environment.NewLine);
+    static void SaveConfig(IOPathManager.IOPathManagerEnv env, NemConfig config) =>
+        NemConfigFile.Write(env.ConfigFilePath, config);
 }

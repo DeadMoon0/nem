@@ -11,7 +11,7 @@ internal class AuditCommandSettings : CommandSettings
 {
     [CommandArgument(0, "[path]")]
     [DefaultValue(".")]
-    [Description("A folder inside the env. The nem.json is looked up from there upwards.")]
+    [Description("A folder inside the env. The nem config is looked up from there upwards.")]
     public required string Path { get; init; }
 }
 

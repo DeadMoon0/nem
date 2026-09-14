@@ -38,10 +38,10 @@ internal class Program
                 .WithDescription("Lists the known vulnerabilities in the env's installed tools. 'nem install' only prints the count.");
 
             config.AddCommand<InitCommand>("init")
-                .WithDescription("Creates a nem env (nem.json + .nenv folder) for a project.");
+                .WithDescription("Creates a nem env (nem.jsonc + .nenv folder) for a project.");
 
             config.AddCommand<InstallCommand>("install")
-                .WithDescription("Downloads/copies the Node version and installs tool proxies from nem.json.");
+                .WithDescription("Downloads/copies the Node version and installs tool proxies from the nem config.");
 
             config.AddCommand<RunCommand>("run")
                 .WithDescription("Runs a tool from the nem env (or the system fallback). Tool arguments follow the tool name.");
@@ -56,7 +56,7 @@ internal class Program
             {
                 c.SetDescription("Manages the tools of the env of the current directory.");
                 c.AddCommand<ToolCommandAdd>("add")
-                    .WithDescription("Records an npm package in nem.json (it is installed by 'nem install'), e.g. 'nem tool add ts-node@10.9.0'.");
+                    .WithDescription("Records an npm package in the nem config (it is installed by 'nem install'), e.g. 'nem tool add ts-node@10.9.0'.");
                 c.AddCommand<ToolCommandRemove>("remove")
                     .WithDescription("Removes an npm package from the env.");
                 c.AddCommand<ToolCommandList>("list")

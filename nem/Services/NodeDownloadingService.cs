@@ -25,7 +25,7 @@ public static class NodeDownloadingService
         if (string.IsNullOrWhiteSpace(version))
             throw new ArgumentException("A node version is required.", nameof(version));
 
-        // Allow a hand-edited nem.json to carry a partial spec ("22"): resolve it
+        // Allow a hand-edited config to carry a partial spec ("22"): resolve it
         // to the newest matching release before downloading.
         if (IsPartialVersionSpec(version))
             version = await ResolveNodeVersionAsync(version);

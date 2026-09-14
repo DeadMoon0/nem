@@ -9,7 +9,7 @@
 
 `nem` lets you declare and manage Node.js versions and CLI tools **per project**, similar to Python's `.venv`. Instead of relying on globally installed tools or requiring developers to juggle multiple Node versions, `nem` creates a project-local environment that:
 
-- **Declares** the required Node version and tools in `nem.json` (committed to git)
+- **Declares** the required Node version and tools in `nem.jsonc` (committed to git)
 - **Installs** Node and tools into a `.nenv/` folder (gitignored)
 - **Routes** tool invocations transparently - use the local version when in a managed project, fall back to the system tool otherwise
 
@@ -41,7 +41,7 @@ nem setup
 ### Initialize a project
 ```bash
 $ nem init <nodeVersion> [path]
-# Validates the version against nodejs.org and creates nem.json
+# Validates the version against nodejs.org and creates nem.jsonc
 # (NodeVersion + Tools) in the current or the given folder
 ```
 
@@ -50,28 +50,28 @@ The version is validated before anything is written:
 - An exact version (`18.12.0`, also accepted with a leading `v`) must exist on
   nodejs.org, otherwise init fails.
 - A partial version (`22` or `18.12`) resolves to the newest matching release
-  and the **resolved** version is what gets written to `nem.json`, e.g. `22`
+  and the **resolved** version is what gets written to `nem.jsonc`, e.g. `22`
   -> `22.23.2`.
 
 ### Manage tools (declarative)
 ```bash
 $ nem tool add ts-node@10.9.0
-# Records ts-node@10.9.0 in nem.json. Nothing is installed yet.
+# Records ts-node@10.9.0 in nem.jsonc. Nothing is installed yet.
 
 $ nem tool add @angular/cli
 # No version given? nem resolves the newest stable version whose
 # engines.node field supports the env's NodeVersion (from the npm
-# registry) and records that exact version in nem.json.
+# registry) and records that exact version in nem.jsonc.
 
 $ nem tool list
 # Declared tools with installed / not installed status
 
 $ nem tool remove ts-node
-# Removes it from nem.json; if the env has it installed, uninstalls
+# Removes it from nem.jsonc; if the env has it installed, uninstalls
 # it and deletes its proxies.
 ```
 
-The `nem tool` commands only touch `nem.json` (and clean the env on remove) - they never install packages. That keeps them fast and lets you edit declarations before materializing.
+The `nem tool` commands only touch `nem.jsonc` (and clean the env on remove) - they never install packages. That keeps them fast and lets you edit declarations before materializing.
 
 ### Install the environment
 ```bash
@@ -79,7 +79,7 @@ $ nem install [path]
 # The single materialization step:
 #   1. Downloads the declared Node version (cached in the nem system
 #      directory, see Caches) and copies it into .nenv/
-#   2. Installs every tool declared in nem.json that is missing
+#   2. Installs every tool declared in nem.jsonc that is missing
 #   3. Creates global proxies for npm, npx and every binary the
 #      installed packages expose (from their package.json "bin" field)
 
@@ -90,7 +90,7 @@ $ nem install --clean [path]
 `nem install` is idempotent - re-run it any time; only what is missing gets installed.
 
 - If the Node version in `.nenv` does not match the declared version (e.g. after
-  editing `nem.json`), it is removed and the declared version is installed.
+  editing `nem.jsonc`), it is removed and the declared version is installed.
 - Proxies are only ever added, never removed. The proxy directory is machine-wide,
   so pruning "stale" shims here would delete the ones another project still needs.
   A surplus proxy is harmless: inside an env that does not declare the tool it says
@@ -118,7 +118,7 @@ $ ng serve
 # The global proxy finds the env by walking up from your CWD,
 # then runs the .nenv copy of ng with the env's node.
 
-$ cd ../other-project  # no nem.json here
+$ cd ../other-project  # no nem config here
 $ ng serve
 # No env found -> falls back to the system ng.
 ```
@@ -135,14 +135,14 @@ $ nem run ng serve
 
 #### A project's own copy wins
 
-The tools in `nem.json` are the env's copy: what runs when the project does not
+The tools in `nem.jsonc` are the env's copy: what runs when the project does not
 ship the tool itself. npm CLIs resolve the nearest `node_modules` before anything
 global, so once a workspace declares the same package in its `package.json`, that
-copy decides the version there - `nem.json` still governs the env copy, not the
+copy decides the version there - `nem.jsonc` still governs the env copy, not the
 project's.
 
 ```bash
-$ cd my-repo            # nem.json pins @angular/cli 20.3.11
+$ cd my-repo            # nem.jsonc pins @angular/cli 20.3.11
 $ ng --version
 20.3.11                 # the env copy
 
@@ -166,7 +166,7 @@ $ nem update
 # table plus the exact commands to apply the updates, and changes nothing.
 
 $ nem update 20
-# Resolves '20' to the newest matching release, updates nem.json and
+# Resolves '20' to the newest matching release, updates nem.jsonc and
 # installs it into .nenv. Tools keep their versions, unless you add
 # --tools (or answer the interactive question) so they are updated to the
 # newest versions the new Node supports.
@@ -186,8 +186,8 @@ $ nem update all
 
 ### Share with your team
 ```bash
-# Commit nem.json
-$ git add nem.json
+# Commit nem.jsonc
+$ git add nem.jsonc
 $ git commit -m "Lock node 18.12.0, ng 15.2.11"
 
 # Team member clones and runs:
@@ -199,16 +199,34 @@ $ nem install
 
 ## How It Works
 
-**1. nem.json** - Your environment declaration
-```json
+**1. nem.jsonc** - Your environment declaration
+```jsonc
+/*
+ * nem - Node Environment Manager
+ * https://github.com/DeadMoon0/NEM
+ * ...
+ */
 {
   "NodeVersion": "18.12.0",
   "Tools": [
     { "ToolName": "@angular/cli", "ToolVersion": "15.2.11" },
+    // pinned until the v16 migration lands
     { "ToolName": "ts-node", "ToolVersion": "10.9.0" }
   ]
 }
 ```
+
+The file is JSONC, so `//` and `/* */` comments are allowed - handy for saying *why*
+a version is pinned. `nem init` writes a short header explaining what the file is.
+
+> Envs created before JSONC support carry a plain `nem.json`. Those keep working
+> unchanged: nem reads either name (preferring `nem.jsonc` if both are present) and
+> writes back to the one your project already has, so a `nem.json` never grows
+> comments that would make it invalid JSON. Rename it to `nem.jsonc` yourself if
+> you want to start using comments.
+
+> nem rewrites the file on `nem update` and `nem tool`, and only the generated
+> header survives that - hand-written comments elsewhere are lost.
 
 **2. `.nenv/` folder** - The isolated environment
 ```
@@ -227,17 +245,17 @@ $ nem install
 proxy dir on PATH (e.g. %APPDATA%\nem\proxy\ng.bat on Windows,
 ~/.config/nem/proxy/ng on Unix)
   -> nem run ng -- <args>
-       1. walk up from CWD looking for nem.json
+       1. walk up from CWD looking for nem.jsonc
        2. if found: run the env's ng (shim + env node)
        3. if not found: run the system ng (fallback)
 ```
 
-Proxies exist as `ng`, `ng.bat` (cmd) and `ng.ps1` (PowerShell). `nem install` re-creates the proxies for `npm`, `npx` and every tool in `nem.json`, so a fresh checkout plus `nem install` makes all declared tools work.
+Proxies exist as `ng`, `ng.bat` (cmd) and `ng.ps1` (PowerShell). `nem install` re-creates the proxies for `npm`, `npx` and every tool in `nem.jsonc`, so a fresh checkout plus `nem install` makes all declared tools work.
 
 **4. Tool installation** - npm-powered
 ```
 nem install
-  -> for each missing tool in nem.json:
+  -> for each missing tool in nem.jsonc:
        npm install -g --no-audit <tool>@<version> --prefix .nenv
   -> reads each package's "bin" entries, creates a proxy per binary
   -> warns when another PATH entry answers for a proxied name first
@@ -251,7 +269,7 @@ nem tool add @angular/cli   (env NodeVersion = 18.12.0)
   -> fetches the packument from the npm registry
   -> picks the newest stable version whose engines.node range
      allows 18.12.0  =>  16.2.16, not the latest 22.x
-  -> records @angular/cli@16.2.16 in nem.json
+  -> records @angular/cli@16.2.16 in nem.jsonc
 ```
 An explicit `@version` or dist-tag is used as-is (validated against the registry).
 
@@ -273,7 +291,7 @@ The solution contains three projects:
 | Project | Purpose |
 | --- | --- |
 | `nem/` | The CLI (commands, services, proxy templates) and the packaged dotnet tool |
-| `nem.Common/` | Shared models (`nem.json`) and path management |
+| `nem.Common/` | Shared models (`nem.jsonc`) and path management |
 | `nem.Tests/` | xunit unit tests (version logic, env layout, config, proxies, update planning) |
 
 ```bash
@@ -291,5 +309,5 @@ deleted afterwards.
 
 - **Lightweight** - just wraps npm and a downloaded Node distribution
 - **Transparent** - tools work exactly as they normally do once the proxy dir is on your PATH
-- **Reproducible** - `nem.json` locks Node and tool versions across your team
+- **Reproducible** - `nem.jsonc` locks Node and tool versions across your team
 - **Portable** - one `.nenv/` per project, no system pollution, safe to delete

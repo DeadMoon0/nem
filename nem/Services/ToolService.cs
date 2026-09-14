@@ -8,15 +8,14 @@ using System.Text;
 using System.Text.RegularExpressions;
 using nem.Common;
 using nem.Common.Models;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Spectre.Console;
 
 namespace nem.Services;
 
 /// <summary>
-/// Manages the Tools section of nem.json. The 'nem tool' commands are purely declarative
-/// (they only edit nem.json, except for 'remove' which also cleans the env). The env
+/// Manages the Tools section of the nem config. The 'nem tool' commands are purely
+/// declarative (they only edit the config, except for 'remove' which also cleans the env). The env
 /// itself is materialized by 'nem install' via <see cref="InstallMissing"/>.
 /// </summary>
 public static class ToolService
@@ -53,7 +52,7 @@ public static class ToolService
     private static string? _resolveScript;
 
     /// <summary>
-    /// Declares a tool in nem.json (no install). Resolves the version to an exact one:
+    /// Declares a tool in the nem config (no install). Resolves the version to an exact one:
     /// user version as-is (validated), or the newest version that supports the env's
     /// Node version when none is given.
     /// </summary>
@@ -100,14 +99,14 @@ public static class ToolService
         else
             config.Tools.Add(new NemToolConfig { ToolName = name, ToolVersion = resolved });
 
-        File.WriteAllText(env.ConfigFilePath, JsonConvert.SerializeObject(config, Formatting.Indented) + Environment.NewLine);
+        NemConfigFile.Write(env.ConfigFilePath, config);
         AnsiConsole.MarkupLine($"[green]Added[/] {name}@{resolved} to {Markup.Escape(env.ConfigFilePath)}.");
         AnsiConsole.MarkupLine($"Run [green]nem install[/] to install it into the env.");
         return 0;
     }
 
     /// <summary>
-    /// Removes a tool from nem.json. If the env has it installed, uninstalls it and
+    /// Removes a tool from the nem config. If the env has it installed, uninstalls it and
     /// deletes its proxies.
     /// </summary>
     public static int Remove(string packageName)
@@ -123,8 +122,7 @@ public static class ToolService
         }
 
         config.Tools.Remove(tool);
-        string nemJsonText = JsonConvert.SerializeObject(config, Formatting.Indented) + Environment.NewLine;
-        File.WriteAllText(env.ConfigFilePath, nemJsonText);
+        NemConfigFile.Write(env.ConfigFilePath, config);
         AnsiConsole.MarkupLine($"Removed {packageName} from {Markup.Escape(env.ConfigFilePath)}.");
 
         string envDir = env.EnvDirPath;
@@ -181,7 +179,7 @@ public static class ToolService
         if (anyLocal)
         {
             AnsiConsole.MarkupLine("[yellow]A project node_modules here declares the tool itself and takes over from the env.[/]");
-            AnsiConsole.MarkupLine("[yellow]That is how npm tools work; nem.json governs the env copy, the project governs its own.[/]");
+            AnsiConsole.MarkupLine("[yellow]That is how npm tools work; the nem config governs the env copy, the project governs its own.[/]");
         }
 
         // Name the directories the Command column is talking about, and what nem
@@ -201,7 +199,7 @@ public static class ToolService
     /// <para>
     /// npm CLIs resolve the nearest node_modules before anything global, so a
     /// workspace that declares the tool itself decides which version runs there -
-    /// nem.json only governs the env copy. Reported rather than fought: overriding
+    /// The nem config only governs the env copy. Reported rather than fought: overriding
     /// it would build with a different tool than the project's lockfile pins.
     /// </para>
     /// </summary>
@@ -256,7 +254,7 @@ public static class ToolService
     }
 
     /// <summary>
-    /// Installs every tool declared in nem.json that is missing from the env, then
+    /// Installs every tool declared in the nem config that is missing from the env, then
     /// (re)creates the proxies for all declared tools. Called by 'nem install'.
     /// </summary>
     public static int InstallMissing(NemConfig config, string envDir)
@@ -268,7 +266,7 @@ public static class ToolService
             if (IsToolInstalled(envDir, tool.ToolName))
             {
                 // Re-install when what is on disk no longer matches the declared
-                // version (e.g. after 'nem update' changed nem.json).
+                // version (e.g. after 'nem update' changed the config).
                 string? installedVersion = GetInstalledToolVersion(envDir, tool.ToolName);
                 if (installedVersion != null &&
                     string.Equals(installedVersion, tool.ToolVersion, StringComparison.OrdinalIgnoreCase))
@@ -522,7 +520,7 @@ public static class ToolService
 
     private static int NotInEnv()
     {
-        AnsiConsole.MarkupLine($"[red]No {Markup.Escape(IOPathManager.Local(Directory.GetCurrentDirectory()).ConfigFileName)} found in the current directory or any parent.[/]");
+        AnsiConsole.MarkupLine($"[red]No {Markup.Escape(IOPathManager.ConfigFileNamesText)} found in the current directory or any parent.[/]");
         AnsiConsole.MarkupLine($"Run [green]nem init <nodeVersion>[/] in your project root first.");
         return 1;
     }
@@ -535,7 +533,7 @@ public static class ToolService
 
         try
         {
-            config = JsonConvert.DeserializeObject<NemConfig>(File.ReadAllText(env.ConfigFilePath));
+            config = NemConfigFile.Read(env.ConfigFilePath);
         }
         catch (Exception)
         {

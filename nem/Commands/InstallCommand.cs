@@ -1,7 +1,6 @@
 using nem.Common;
 using nem.Common.Models;
 using nem.Services;
-using Newtonsoft.Json;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using System.ComponentModel;
@@ -15,7 +14,7 @@ internal class InstallCommandSettings : CommandSettings
 {
     [CommandArgument(0, "[path]")]
     [DefaultValue(".")]
-    [Description("A folder inside the env. The nem.json is looked up from there upwards.")]
+    [Description("A folder inside the env. The nem config is looked up from there upwards.")]
     public required string Path { get; init; }
 
     [CommandOption("-c|--clean")]
@@ -35,7 +34,7 @@ internal class InstallCommand : AsyncCommand<InstallCommandSettings>
         if (!EnvLocator.TryLocate(path, out IOPathManager.IOPathManagerEnv? local))
             return 1;
 
-        NemConfig config = JsonConvert.DeserializeObject<NemConfig>(File.ReadAllText(local.ConfigFilePath))!;
+        NemConfig config = NemConfigFile.Read(local.ConfigFilePath);
         if (string.IsNullOrWhiteSpace(config.NodeVersion))
         {
             AnsiConsole.MarkupLine($"[red]{local.ConfigFileName} does not specify a 'NodeVersion'.[/]");

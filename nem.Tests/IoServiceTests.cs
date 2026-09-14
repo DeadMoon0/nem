@@ -1,12 +1,12 @@
 using Xunit;
-using Newtonsoft.Json;
 using nem.Common.Models;
 using nem.Services;
 
 namespace nem.Tests;
 
 /// <summary>
-/// nem.json / .nenv creation and the walk-up that finds the project env.
+/// nem.jsonc / .nenv creation, including what happens to an env that still carries
+/// the older nem.json.
 /// </summary>
 public class IoServiceTests
 {
@@ -18,9 +18,10 @@ public class IoServiceTests
 
         IOService.InitEnv(tmp.FullName, "22.23.2");
 
-        string configPath = Path.Combine(tmp.FullName, "nem.json");
-        NemConfig config = JsonConvert.DeserializeObject<NemConfig>(File.ReadAllText(configPath))!;
+        string configPath = Path.Combine(tmp.FullName, "nem.jsonc");
+        NemConfig config = NemConfigFile.Read(configPath);
         Assert.Equal("22.23.2", config.NodeVersion);
+        Assert.Contains(NemConfigFile.Header, File.ReadAllText(configPath));
         Assert.True(Directory.Exists(Path.Combine(tmp.FullName, ".nenv")));
 
         string gitignore = File.ReadAllText(Path.Combine(tmp.FullName, ".gitignore"));
@@ -38,15 +39,54 @@ public class IoServiceTests
             NodeVersion = "22.0.0",
             Tools = [new NemToolConfig { ToolName = "typescript", ToolVersion = "5.6.3" }],
         };
-        File.WriteAllText(Path.Combine(tmp.FullName, "nem.json"), JsonConvert.SerializeObject(existing));
+        NemConfigFile.Write(Path.Combine(tmp.FullName, "nem.jsonc"), existing);
 
         IOService.InitEnv(tmp.FullName, "22.23.2");
 
-        NemConfig config = JsonConvert.DeserializeObject<NemConfig>(File.ReadAllText(Path.Combine(tmp.FullName, "nem.json")))!;
+        NemConfig config = NemConfigFile.Read(Path.Combine(tmp.FullName, "nem.jsonc"));
         Assert.Equal("22.23.2", config.NodeVersion);
         Assert.Single(config.Tools);
         Assert.Equal("typescript", config.Tools[0].ToolName);
         Assert.Equal("5.6.3", config.Tools[0].ToolVersion);
+    }
+
+    /// <summary>
+    /// An env created before the '.jsonc' config keeps its file: re-initializing it
+    /// must update that one and not drop a second config next to it, which would
+    /// shadow the first from then on.
+    /// </summary>
+    [Fact]
+    public void InitEnv_Updates_A_Legacy_Json_Config_In_Place()
+    {
+        using var tmp = new TempDir();
+        string legacyPath = Path.Combine(tmp.FullName, "nem.json");
+        NemConfigFile.Write(legacyPath, new NemConfig
+        {
+            NodeVersion = "22.0.0",
+            Tools = [new NemToolConfig { ToolName = "typescript", ToolVersion = "5.6.3" }],
+        });
+
+        IOService.InitEnv(tmp.FullName, "22.23.2");
+
+        Assert.False(File.Exists(Path.Combine(tmp.FullName, "nem.jsonc")));
+        string text = File.ReadAllText(legacyPath);
+        Assert.DoesNotContain("/*", text);
+
+        NemConfig config = NemConfigFile.Parse(text);
+        Assert.Equal("22.23.2", config.NodeVersion);
+        Assert.Single(config.Tools);
+    }
+
+    [Fact]
+    public void InitEnv_Keeps_A_Hand_Written_Comment_Readable()
+    {
+        using var tmp = new TempDir();
+        File.WriteAllText(Path.Combine(tmp.FullName, "nem.jsonc"),
+            "// pinned for the 2026 release\n{ \"NodeVersion\": \"22.0.0\" }\n");
+
+        IOService.InitEnv(tmp.FullName, "22.23.2");
+
+        Assert.Equal("22.23.2", NemConfigFile.Read(Path.Combine(tmp.FullName, "nem.jsonc")).NodeVersion);
     }
 
     [Fact]
@@ -69,8 +109,7 @@ public class IoServiceTests
 
         IOService.InitEnv(tmp.FullName, "22.23.2");
 
-        NemConfig config = JsonConvert.DeserializeObject<NemConfig>(
-            File.ReadAllText(Path.Combine(tmp.FullName, "nem.json")))!;
+        NemConfig config = NemConfigFile.Read(Path.Combine(tmp.FullName, "nem.jsonc"));
         Assert.Equal("22.23.2", config.NodeVersion);
     }
 

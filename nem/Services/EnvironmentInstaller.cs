@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 namespace nem.Services;
 
 /// <summary>
-/// The shared 'nem install' pipeline: install the Node version from nem.json,
+/// The shared 'nem install' pipeline: install the Node version from the nem config,
 /// install every declared tool that is missing, refresh the npm/npx proxies,
 /// prune proxies that are stale for this env, and audit the result.
 /// </summary>

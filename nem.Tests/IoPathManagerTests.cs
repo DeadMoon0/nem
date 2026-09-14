@@ -4,7 +4,7 @@ using nem.Common;
 namespace nem.Tests;
 
 /// <summary>
-/// Where nem keeps its state: project-local (nem.json + .nenv) versus
+/// Where nem keeps its state: project-local (nem.jsonc + .nenv) versus
 /// machine-wide (download cache, extract cache, proxies).
 /// </summary>
 public class IoPathManagerTests
@@ -14,10 +14,54 @@ public class IoPathManagerTests
     {
         var local = IOPathManager.Local("/some/project");
 
-        Assert.Equal("nem.json", local.ConfigFileName);
-        Assert.Equal(Path.Combine("/some/project", "nem.json"), local.ConfigFilePath);
+        Assert.Equal("nem.jsonc", local.ConfigFileName);
+        Assert.Equal(Path.Combine("/some/project", "nem.jsonc"), local.ConfigFilePath);
         Assert.Equal(".nenv", local.EnvDirName);
         Assert.Equal(Path.Combine("/some/project", ".nenv"), local.EnvDirPath);
+    }
+
+    [Fact]
+    public void A_New_Env_Gets_The_Jsonc_Config_But_Both_Names_Are_Accepted()
+    {
+        Assert.Equal(["nem.jsonc", "nem.json"], IOPathManager.ConfigFileNames);
+        Assert.Equal("nem.jsonc or nem.json", IOPathManager.ConfigFileNamesText);
+    }
+
+    [Fact]
+    public void TryGetEnv_Reports_The_Config_The_Project_Actually_Has()
+    {
+        foreach (string configFileName in IOPathManager.ConfigFileNames)
+        {
+            using var tmp = new TempDir();
+            File.WriteAllText(Path.Combine(tmp.FullName, configFileName), "{}");
+
+            Assert.True(IOPathManager.TryGetEnv(tmp.FullName, out IOPathManager.IOPathManagerEnv? env));
+            Assert.Equal(configFileName, env!.ConfigFileName);
+            Assert.Equal(Path.Combine(tmp.FullName, configFileName), env.ConfigFilePath);
+        }
+    }
+
+    [Fact]
+    public void TryGetEnv_Prefers_The_Jsonc_Config_When_Both_Are_There()
+    {
+        using var tmp = new TempDir();
+        File.WriteAllText(Path.Combine(tmp.FullName, "nem.json"), "{}");
+        File.WriteAllText(Path.Combine(tmp.FullName, "nem.jsonc"), "{}");
+
+        Assert.True(IOPathManager.TryGetEnv(tmp.FullName, out IOPathManager.IOPathManagerEnv? env));
+        Assert.Equal(Path.Combine(tmp.FullName, "nem.jsonc"), env!.ConfigFilePath);
+    }
+
+    [Fact]
+    public void TryGetEnv_Looks_At_That_Folder_Only()
+    {
+        using var tmp = new TempDir();
+        File.WriteAllText(Path.Combine(tmp.FullName, "nem.jsonc"), "{}");
+        string child = Path.Combine(tmp.FullName, "child");
+        Directory.CreateDirectory(child);
+
+        Assert.False(IOPathManager.TryGetEnv(child, out IOPathManager.IOPathManagerEnv? env));
+        Assert.Null(env);
     }
 
     [Fact]
@@ -32,20 +76,23 @@ public class IoPathManagerTests
     }
 
     [Theory]
-    [InlineData("")]
-    [InlineData("a")]
-    [InlineData("a/b")]
-    [InlineData("a/b/c/d/e")]
-    public void TryFindEnv_Finds_The_Env_From_Any_Depth(string sub)
+    [InlineData("", "nem.jsonc")]
+    [InlineData("a", "nem.jsonc")]
+    [InlineData("a/b", "nem.jsonc")]
+    [InlineData("a/b/c/d/e", "nem.jsonc")]
+    // An env created before the '.jsonc' config is found from just as deep.
+    [InlineData("", "nem.json")]
+    [InlineData("a/b/c/d/e", "nem.json")]
+    public void TryFindEnv_Finds_The_Env_From_Any_Depth(string sub, string configFileName)
     {
         using var tmp = new TempDir();
-        File.WriteAllText(Path.Combine(tmp.FullName, "nem.json"), "{}");
+        File.WriteAllText(Path.Combine(tmp.FullName, configFileName), "{}");
         string start = Path.Combine(tmp.FullName, sub.Replace('/', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(start);
 
         Assert.True(IOPathManager.TryFindEnv(start, out IOPathManager.IOPathManagerEnv? env));
         Assert.Equal(tmp.FullName, env!.DirPath);
-        Assert.Equal(Path.Combine(tmp.FullName, "nem.json"), env.ConfigFilePath);
+        Assert.Equal(Path.Combine(tmp.FullName, configFileName), env.ConfigFilePath);
         Assert.Equal(Path.Combine(tmp.FullName, ".nenv"), env.EnvDirPath);
     }
 

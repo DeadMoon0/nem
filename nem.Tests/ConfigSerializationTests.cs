@@ -5,8 +5,9 @@ using nem.Common.Models;
 namespace nem.Tests;
 
 /// <summary>
-/// nem.json is hand-editable project state, so its JSON shape (PascalCase
-/// keys, optional Tools) must stay stable.
+/// The config is hand-editable project state, so its JSON shape (PascalCase
+/// keys, optional Tools) must stay stable. How the file itself is read and
+/// written lives in <see cref="NemConfigFileTests"/>.
 /// </summary>
 public class ConfigSerializationTests
 {
