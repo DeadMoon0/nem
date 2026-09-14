@@ -22,7 +22,10 @@
 		<RepositoryUrl>https://github.com/DeadMoon0/NEM.git</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
 		<Copyright>Copyright (c) DeadMoon0 2026</Copyright>
-		<PackageReleaseNotes>The project config is now JSONC: 'nem init' creates nem.jsonc with an explanatory header, and comments are allowed in it. The config also carries a schema version now, so a config written by a newer nem is refused with a clear message instead of being half-read. Existing nem.json envs keep working unchanged - nem reads either name and writes back to the one the project already has.</PackageReleaseNotes>
+		<PackageReleaseNotes>BREAKING: 'nem run' now requires the '--' separator before a tool's arguments ('nem run ng -- serve'). Every proxy already passes it, so typing 'ng serve' is unaffected; only direct 'nem run' calls that left it out change. An argument that would not reach the tool is refused now instead of being dropped in silence.
+New 'nem which &lt;tool&gt;' explains which copy of a tool a typed name runs - the system one, the env's, or a project's - and why, step by step. 'nem run' starts what the same resolver returns, so the explanation cannot drift from the behaviour. 'nem tool list' gained a Command column with the same verdict, and reports a project copy as 'via nem (local copy &lt;version&gt;)' rather than claiming it always takes over.
+The project config is now JSONC: 'nem init' creates nem.jsonc with an explanatory header, and comments are allowed in it. The config also carries a schema version now, so a config written by a newer nem is refused with a clear message instead of being half-read. Existing nem.json envs keep working unchanged - nem reads either name and writes back to the one the project already has.
+Mistyped commands and other input errors print a plain message with a suggestion instead of a stack trace.</PackageReleaseNotes>
 		<PackAsTool>True</PackAsTool>
 		<ToolCommandName>nem</ToolCommandName>
 		<!-- The proxy templates (NAME.bat/NAME.ps1/NAME) ship under tools/ on purpose; -->
