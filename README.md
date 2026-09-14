@@ -126,11 +126,11 @@ $ ng serve
 You can also invoke the env machinery explicitly:
 
 ```bash
-$ nem run ng serve
+$ nem run ng -- serve
 # Runs ng from the env of the current directory; everything after the
-# tool name is passed to the tool. A literal '--' is also understood
-# and optional ('nem run ng -- serve' works too). Without an env, nem
-# falls back to the system tool of the same name.
+# '--' is passed to the tool untouched. The separator is required, so
+# that options like '--version' reach the tool instead of nem. Without
+# an env, nem falls back to the system tool of the same name.
 ```
 
 #### Which copy runs

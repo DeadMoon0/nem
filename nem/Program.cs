@@ -9,20 +9,6 @@ internal class Program
 {
     static int Main(string[] args)
     {
-        // 'nem run <tool> <args...>': everything after the tool name is an argument
-        // for the tool, but the CLI parser stops passing options through at the
-        // first '--'. Normalize 'nem run -- <tool> ...' and 'nem run <tool> ...'
-        // to the form the parser needs: 'nem run <tool> -- <args...>'.
-        if (args.Length > 1 && string.Equals(args[0], "run", System.StringComparison.OrdinalIgnoreCase))
-        {
-            string[] rest = args[1..];
-            if (rest.Length > 0 && rest[0] == "--")
-                rest = rest[1..];
-            if (rest.Length > 1 && rest[1] != "--")
-                rest = [rest[0], "--", .. rest[1..]];
-            args = [args[0], .. rest];
-        }
-
         var app = new CommandApp();
 
         app.Configure(config =>

@@ -190,7 +190,7 @@ public static class PathPrecedence
             // the change up.
             AnsiConsole.MarkupLine("[yellow]If a brand new one still misses it, restart Windows Explorer or sign out and back in.[/]");
         }
-        AnsiConsole.MarkupLine("[yellow]Until then, [green]nem run <tool>[/] uses the env regardless.[/]");
+        AnsiConsole.MarkupLine("[yellow]Until then, [green]nem run <tool> -- <args>[/] uses the env regardless.[/]");
     }
 
     /// <summary>
@@ -217,7 +217,7 @@ public static class PathPrecedence
             AnsiConsole.MarkupLine($"[yellow]{Markup.Escape(IOPathManager.System.ProxyDirPath)}.[/]");
         }
 
-        AnsiConsole.MarkupLine("[yellow]Until then, [green]nem run <tool>[/] still uses the env.[/]");
+        AnsiConsole.MarkupLine("[yellow]Until then, [green]nem run <tool> -- <args>[/] still uses the env.[/]");
     }
 
     /// <summary>
