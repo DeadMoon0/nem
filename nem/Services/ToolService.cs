@@ -26,32 +26,6 @@ public static class ToolService
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     /// <summary>
-    /// Node script that resolves a package to an exact version. Fetches the packument
-    /// from the registry and picks, using npm's bundled semver:
-    ///  - range empty        -> newest stable version whose engines.node allows nodeV
-    ///  - range is a version -> that version (validated)
-    ///  - range is a tag     -> the tag's version
-    ///  - range is a range   -> newest stable version in the range
-    /// Prints the version or an empty line. Exits 0 unless the script itself faults.
-    /// </summary>
-    /// <summary>
-    /// Lazily loads the shipped resolver script (Resources/ResolveVersion.js), which
-    /// runs under the env's node so it can use npm's bundled semver implementation.
-    /// </summary>
-    private static string LoadResolveScript() => _resolveScript ??= LoadResourceScript("ResolveVersion.js");
-
-    /// <summary>
-    /// Reads a shipped script from the Resources folder next to the assembly.
-    /// </summary>
-    internal static string LoadResourceScript(string fileName)
-    {
-        string dir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
-        return File.ReadAllText(Path.Combine(dir, "Resources", fileName));
-    }
-
-    private static string? _resolveScript;
-
-    /// <summary>
     /// Declares a tool in the nem config (no install). Resolves the version to an exact one:
     /// user version as-is (validated), or the newest version that supports the env's
     /// Node version when none is given.
@@ -74,22 +48,18 @@ public static class ToolService
         }
 
         string name = packageName!;
-        string envDir = env.EnvDirPath;
         string? resolved = null;
         string? resolveError = null;
         AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
             .Start($"Resolving {name} ...", _ =>
             {
-                resolved = ResolveVersion(name, version, config.NodeVersion ?? string.Empty, envDir, out resolveError);
+                resolved = ResolveVersion(name, version, config.NodeVersion ?? string.Empty, out resolveError);
             });
 
         if (resolved == null)
         {
-            AnsiConsole.MarkupLine($"[red]Could not resolve a version for {Markup.Escape(name)}.[/]");
-            if (resolveError != null)
-                AnsiConsole.MarkupLine($"[red]  {Markup.Escape(resolveError)}[/]");
-            AnsiConsole.MarkupLine("Check the package name, the requested version, and your network connection.");
+            AnsiConsole.MarkupLine($"[red]Could not resolve a version for {Markup.Escape(name)}: {Markup.Escape(resolveError ?? "no version could be resolved")}.[/]");
             return 1;
         }
 
@@ -470,59 +440,20 @@ public static class ToolService
     }
 
     /// <summary>
-    /// Runs the env's node (or the system node) with the resolver script.
-    /// Returns the resolved version or null (with <paramref name="error"/> set to a
-    /// reason when the resolver reported one).
+    /// Resolves a package to an exact version against the registry (npm_config_registry,
+    /// or the public registry): see <see cref="ToolVersionPicker"/> for the rules.
+    /// Returns null with <paramref name="error"/> set to the reason when nothing
+    /// could be resolved. Needs no Node: neither the env's nor one on the PATH.
     /// </summary>
-    public static string? ResolveVersion(string packageName, string? range, string nodeVersion, string envDir, out string? error)
+    public static string? ResolveVersion(string packageName, string? range, string nodeVersion, out string? error)
     {
-        error = null;
-        // Prefer the env's node (it always bundles npm's semver); fall back to a node on PATH.
-        string node = NodeEnvLayout.Create(envDir).NodeBinary;
-        if (!File.Exists(node))
-            node = "node";
+        var registry = new NpmRegistryClient(Environment.GetEnvironmentVariable("npm_config_registry"));
+        VersionPick pick = registry.FetchPackument(packageName).Match(
+            ok: packument => ToolVersionPicker.Pick(packageName, packument, nodeVersion, range),
+            failed: (_, message) => new VersionPick.Unresolved(message));
 
-        var psi = new ProcessStartInfo(node)
-        {
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
-            WorkingDirectory = envDir,
-        };
-        psi.ArgumentList.Add("-e");
-        psi.ArgumentList.Add(LoadResolveScript());
-        psi.ArgumentList.Add(packageName);
-        psi.ArgumentList.Add(nodeVersion ?? "");
-        psi.ArgumentList.Add(range ?? "");
-
-        try
-        {
-            using var process = Process.Start(psi);
-            if (process == null)
-            {
-                error = "no node runtime available (the env node is not installed and no node is on the PATH).";
-                return null;
-            }
-            string output = process.StandardOutput.ReadToEnd();
-            string stderr = process.StandardError.ReadToEnd();
-            process.WaitForExit();
-            if (process.ExitCode != 0)
-            {
-                error = string.IsNullOrWhiteSpace(stderr) ? "the version resolver found no match." : stderr.Trim();
-                return null;
-            }
-
-            string? version = output.Trim().Split('\n', '\r').FirstOrDefault(s => !string.IsNullOrWhiteSpace(s));
-            return string.IsNullOrWhiteSpace(version) ? null : version.Trim().Trim('"');
-        }
-        catch (Exception)
-        {
-            // No node available at all (not installed, not on PATH).
-            error = "no node runtime available (the env node is not installed and no node is on the PATH).";
-            return null;
-        }
+        error = (pick as VersionPick.Unresolved)?.Reason;
+        return (pick as VersionPick.Picked)?.Version;
     }
 
     private static int NotInEnv()

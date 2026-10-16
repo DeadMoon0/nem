@@ -180,7 +180,7 @@ public class UpdatePlannerTests
         public Dictionary<string, Exception> Exceptions { get; init; } = new();
         public List<string> ResolvedWith { get; } = new();
 
-        public string? ResolveLatestVersion(string packageName, string nodeVersion, string envDir, out string? error)
+        public string? ResolveLatestVersion(string packageName, string nodeVersion, out string? error)
         {
             ResolvedWith.Add(nodeVersion);
             if (Exceptions.TryGetValue(packageName, out Exception? exception))

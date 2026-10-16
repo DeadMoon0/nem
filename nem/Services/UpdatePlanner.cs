@@ -73,7 +73,7 @@ public interface INodeVersionSource
 public interface IToolVersionSource
 {
     /// <summary>The newest resolvable version of a tool, or null (with <paramref name="error"/>).</summary>
-    string? ResolveLatestVersion(string packageName, string nodeVersion, string envDir, out string? error);
+    string? ResolveLatestVersion(string packageName, string nodeVersion, out string? error);
 
     /// <summary>The version of a tool installed in the env, or null.</summary>
     string? GetInstalledVersion(string envDir, string packageName);
@@ -106,8 +106,8 @@ public sealed class NodeVersionSource : INodeVersionSource
 /// </summary>
 public sealed class ToolVersionSource : IToolVersionSource
 {
-    public string? ResolveLatestVersion(string packageName, string nodeVersion, string envDir, out string? error) =>
-        ToolService.ResolveVersion(packageName, range: null, nodeVersion, envDir, out error);
+    public string? ResolveLatestVersion(string packageName, string nodeVersion, out string? error) =>
+        ToolService.ResolveVersion(packageName, range: null, nodeVersion, out error);
 
     public string? GetInstalledVersion(string envDir, string packageName) =>
         ToolService.GetInstalledToolVersion(envDir, packageName);
@@ -154,7 +154,7 @@ public sealed class UpdatePlanner
             string? error = null;
             try
             {
-                latest = _toolVersions.ResolveLatestVersion(tool.ToolName, reference, envDir, out error);
+                latest = _toolVersions.ResolveLatestVersion(tool.ToolName, reference, out error);
             }
             catch (Exception e)
             {

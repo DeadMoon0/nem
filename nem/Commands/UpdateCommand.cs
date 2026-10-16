@@ -152,7 +152,7 @@ internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
             AnsiConsole.MarkupLine($"Node: already [green]{version}[/]");
         }
 
-        ApplyLatestTools(config, version, envDir);
+        ApplyLatestTools(config, version);
 
         SaveConfig(local, config);
         AnsiConsole.MarkupLine("[gray]Installing...[/]");
@@ -189,7 +189,7 @@ internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
                 defaultValue: true);
 
         if (updateTools)
-            ApplyLatestTools(config, version, envDir);
+            ApplyLatestTools(config, version);
 
         if (!string.Equals(config.NodeVersion, version, StringComparison.OrdinalIgnoreCase))
         {
@@ -222,7 +222,7 @@ internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
             return 1;
         }
 
-        string? resolved = ToolService.ResolveVersion(name, version, config.NodeVersion ?? "", envDir, out string? error);
+        string? resolved = ToolService.ResolveVersion(name, version, config.NodeVersion ?? "", out string? error);
         if (resolved == null)
         {
             AnsiConsole.MarkupLine($"[red]Could not update {Markup.Escape(name)}: {Markup.Escape(error ?? "no version could be resolved")}.[/]");
@@ -248,11 +248,11 @@ internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
     /// Updates every tool in the config to the newest version supported by
     /// nodeVersion (kept on failure so a bad range never clobbers a working env).
     /// </summary>
-    static void ApplyLatestTools(NemConfig config, string nodeVersion, string envDir)
+    static void ApplyLatestTools(NemConfig config, string nodeVersion)
     {
         foreach (NemToolConfig tool in config.Tools)
         {
-            string? latest = ToolService.ResolveVersion(tool.ToolName, range: null, nodeVersion, envDir, out string? error);
+            string? latest = ToolService.ResolveVersion(tool.ToolName, range: null, nodeVersion, out string? error);
             if (latest == null)
             {
                 AnsiConsole.MarkupLine(

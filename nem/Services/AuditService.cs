@@ -1,10 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Text;
-using Newtonsoft.Json.Linq;
 using Spectre.Console;
 
 namespace nem.Services;
@@ -32,9 +29,6 @@ public static class AuditService
     private static string ColorOf(string severity) =>
         Severities.TryGetValue(severity, out var s) ? s.Color : "gray";
 
-    private static string? Str(JToken? token) =>
-        token is JValue value ? value.ToString() : null;
-
     /// <summary>One advisory from the registry, for one installed package.</summary>
     public sealed record Advisory(string Severity, string Name, IReadOnlyList<string> Versions, string Title, string Url);
 
@@ -43,7 +37,7 @@ public static class AuditService
     {
         /// <summary>The env has no installed tools to audit.</summary>
         NothingToAudit,
-        /// <summary>The registry could not be reached, or no node was available.</summary>
+        /// <summary>The registry could not be reached, or refused the request.</summary>
         Unavailable,
         /// <summary>The registry answered with something that is not a report.</summary>
         InvalidResponse,
@@ -110,7 +104,7 @@ public static class AuditService
             case AuditOutcome.NothingToAudit:
                 return;
             case AuditOutcome.Unavailable:
-                AnsiConsole.MarkupLine("[gray]Security audit skipped (registry unreachable or no node available).[/]");
+                AnsiConsole.MarkupLine("[gray]Security audit skipped (registry unreachable).[/]");
                 return;
             case AuditOutcome.InvalidResponse:
                 AnsiConsole.MarkupLine("[gray]Security audit skipped (invalid response from registry).[/]");
@@ -142,85 +136,49 @@ public static class AuditService
         if (!Directory.Exists(modulesRoot))
             return new AuditReport(AuditOutcome.NothingToAudit, 0, []);
 
-        string registry = ToolService.RunNpmCapture(envDir, new[] { "config", "get", "registry" })
-                           ?? "https://registry.npmjs.org";
-        if (!Uri.TryCreate(registry, UriKind.Absolute, out Uri? uri) || uri.IsFile)
-            registry = "https://registry.npmjs.org";
-
-        string? report = RunAuditScript(envDir, modulesRoot, registry);
-        if (report == null)
-            return new AuditReport(AuditOutcome.Unavailable, 0, []);
-
-        JToken? root;
-        try
-        {
-            root = JToken.Parse(report);
-        }
-        catch (Exception)
-        {
-            return new AuditReport(AuditOutcome.InvalidResponse, 0, []);
-        }
-
-        int packages = (int)(root?["packages"] ?? 0);
-        if (packages == 0)
+        IReadOnlyDictionary<string, IReadOnlyList<string>> installed = InstalledPackageScanner.Scan(modulesRoot);
+        if (installed.Count == 0)
             return new AuditReport(AuditOutcome.NothingToAudit, 0, []);
 
-        var advisories = ((root?["advisories"] as JArray)?.ToList() ?? [])
-            .Select(t => new Advisory(
-                Str(t?["severity"]) ?? "unknown",
-                Str(t?["name"]) ?? "?",
-                (t?["versions"] as JArray)?.Select(v => v.ToString() ?? string.Empty).ToList() ?? [],
-                Str(t?["title"]) ?? "Unknown advisory",
-                Str(t?["url"]) ?? string.Empty))
-            .OrderByDescending(a => RankOf(a.Severity))
-            .ThenBy(a => a.Name)
-            .ToList();
-
-        return new AuditReport(AuditOutcome.Completed, packages, advisories);
+        var registry = new NpmRegistryClient(ToolService.RunNpmCapture(envDir, new[] { "config", "get", "registry" }));
+        return registry.FetchBulkAdvisories(installed).Match(
+            ok: advisories => new AuditReport(AuditOutcome.Completed, installed.Count, MatchAdvisories(installed, advisories)),
+            failed: (failure, _) => new AuditReport(
+                failure == RegistryFailure.InvalidResponse ? AuditOutcome.InvalidResponse : AuditOutcome.Unavailable, 0, []));
     }
 
     /// <summary>
-    /// Runs Resources/AuditEnv.js under the env's node; returns the JSON report or null.
+    /// Pairs the registry's advisories with the installed versions they affect,
+    /// worst first.
     /// </summary>
-    private static string? RunAuditScript(string envDir, string modulesRoot, string registry)
+    internal static IReadOnlyList<Advisory> MatchAdvisories(
+        IReadOnlyDictionary<string, IReadOnlyList<string>> installed,
+        IReadOnlyDictionary<string, IReadOnlyList<RegistryAdvisory>> advisories) =>
+        advisories
+            .SelectMany(package => package.Value.Select(a => new Advisory(
+                a.Severity,
+                package.Key,
+                AffectedVersions(installed.GetValueOrDefault(package.Key) ?? [], a.VulnerableVersions),
+                a.Title,
+                a.Url)))
+            .OrderByDescending(a => RankOf(a.Severity))
+            .ThenBy(a => a.Name, StringComparer.Ordinal)
+            .ToList();
+
+    /// <summary>
+    /// The installed versions inside the advisory's range. Conservative: when the
+    /// range is missing or unreadable, or matches none of them (the registry only
+    /// answers for affected packages), every installed version is reported.
+    /// </summary>
+    static IReadOnlyList<string> AffectedVersions(IReadOnlyList<string> installed, string vulnerableVersions)
     {
-        string node = NodeEnvLayout.Create(envDir).NodeBinary;
-        if (!File.Exists(node))
-            node = "node";
+        if (string.IsNullOrWhiteSpace(vulnerableVersions) || NpmSemver.ParseRange(vulnerableVersions, includePrerelease: false) is not { } range)
+            return installed;
 
-        var psi = new ProcessStartInfo(node)
-        {
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
-            WorkingDirectory = envDir,
-        };
-        psi.ArgumentList.Add("-e");
-        psi.ArgumentList.Add(ToolService.LoadResourceScript("AuditEnv.js"));
-        psi.ArgumentList.Add(modulesRoot);
-        psi.ArgumentList.Add(registry);
-
-        try
-        {
-            using var process = Process.Start(psi);
-            if (process == null)
-                return null;
-            string output = process.StandardOutput.ReadToEnd();
-            process.StandardError.ReadToEnd();
-            if (!process.WaitForExit(120_000))
-            {
-                process.Kill();
-                return null;
-            }
-            if (process.ExitCode != 0)
-                return null;
-            return output.Trim();
-        }
-        catch (Exception)
-        {
-            return null;
-        }
+        // A version nem cannot read is kept: better a false alarm than a missed one.
+        List<string> affected = installed
+            .Where(v => NpmSemver.ParseVersion(v) is not { } version || range.Contains(version))
+            .ToList();
+        return affected.Count > 0 ? affected : installed;
     }
 }

@@ -45,6 +45,7 @@ Mistyped commands and other input errors print a plain message with a suggestion
 
 	<ItemGroup>
 	  <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+	  <PackageReference Include="Semver" Version="3.0.0" />
 	  <PackageReference Include="Spectre.Console" Version="0.57.2" />
 	  <PackageReference Include="Spectre.Console.Cli" Version="0.55.0" />
 	</ItemGroup>
@@ -59,13 +60,7 @@ Mistyped commands and other input errors print a plain message with a suggestion
 	</ItemGroup>
 
 	<ItemGroup>
-	  <None Update="Resources\ResolveVersion.js">
-    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-  </None>
-  <None Update="Resources\AuditEnv.js">
-    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-  </None>
-  <None Update="ProxyFiles\NAME">
+	  <None Update="ProxyFiles\NAME">
 	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 	  </None>
 	  <None Update="ProxyFiles\NAME.bat">
@@ -90,7 +85,6 @@ Mistyped commands and other input errors print a plain message with a suggestion
 	<ItemGroup>
 	  <Folder Include="Assets\" />
 	  <Folder Include="ProxyFiles\" />
-  <Folder Include="Resources\" />
 	</ItemGroup>
 
 </Project>
