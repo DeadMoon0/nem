@@ -67,12 +67,28 @@ public class IoPathManagerTests
     [Fact]
     public void System_Dir_Lives_Under_The_User_Config_Folder()
     {
-        string configFolder = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        string configFolder = Path.Combine(Path.GetTempPath(), "home", ".config");
+        var system = new IOPathManager.IOPathManagerSystem(configFolder);
 
-        Assert.Equal(Path.Combine(configFolder, "nem"), IOPathManager.System.DirPath);
-        Assert.Equal(Path.Combine(configFolder, "nem", "download"), IOPathManager.System.DownloadCacheDirPath);
-        Assert.Equal(Path.Combine(configFolder, "nem", "extract"), IOPathManager.System.ExtractCacheDirPath);
-        Assert.Equal(Path.Combine(configFolder, "nem", "proxy"), IOPathManager.System.ProxyDirPath);
+        Assert.Equal(Path.Combine(configFolder, "nem"), system.DirPath);
+        Assert.Equal(Path.Combine(configFolder, "nem", "download"), system.DownloadCacheDirPath);
+        Assert.Equal(Path.Combine(configFolder, "nem", "extract"), system.ExtractCacheDirPath);
+        Assert.Equal(Path.Combine(configFolder, "nem", "proxy"), system.ProxyDirPath);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("nem")]
+    public void A_Config_Folder_That_Is_Not_Absolute_Is_Refused(string configFolder)
+    {
+        // A relative proxy dir would end up as a relative PATH entry in the shell rc files.
+        Assert.Throws<InvalidOperationException>(() => new IOPathManager.IOPathManagerSystem(configFolder));
+    }
+
+    [Fact]
+    public void The_Machine_System_Dir_Is_Absolute()
+    {
+        Assert.True(Path.IsPathFullyQualified(IOPathManager.System.ProxyDirPath));
     }
 
     [Theory]

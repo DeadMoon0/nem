@@ -4,7 +4,20 @@ namespace nem.Common;
 
 public static class IOPathManager
 {
-    public static IOPathManagerSystem System { get; } = new IOPathManagerSystem();
+    // Lazy, so a missing config folder fails the commands that need it with a
+    // message, not every use of IOPathManager with a type-initializer error.
+    static readonly Lazy<IOPathManagerSystem> _system = new(() => new IOPathManagerSystem(UserConfigDir()));
+
+    public static IOPathManagerSystem System => _system.Value;
+
+    /// <summary>
+    /// The per-user config folder (%APPDATA% on Windows, $XDG_CONFIG_HOME or
+    /// ~/.config on Unix). DoNotVerify: on Unix the default option returns ""
+    /// while ~/.config does not exist yet, which on a fresh account made every
+    /// nem path relative to the current directory.
+    /// </summary>
+    static string UserConfigDir() =>
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData, Environment.SpecialFolderOption.DoNotVerify);
 
     /// <summary>
     /// The config file names nem accepts, the preferred one first. A new env gets
@@ -100,10 +113,28 @@ public static class IOPathManager
         public override string ConfigFileName { get; }
     }
 
+    /// <summary>
+    /// The machine-wide nem folders (caches, proxies) below the user's config folder.
+    /// </summary>
     public class IOPathManagerSystem
     {
+        readonly string _userConfigDir;
+
+        /// <param name="userConfigDir">
+        /// The user's config folder. It must be an absolute path: a relative one would
+        /// put the proxy dir (and the PATH entry 'nem setup' writes) relative to
+        /// wherever nem happens to run.
+        /// </param>
+        public IOPathManagerSystem(string userConfigDir)
+        {
+            if (!Path.IsPathFullyQualified(userConfigDir))
+                throw new InvalidOperationException(
+                    $"Cannot determine the user config folder (got '{userConfigDir}'). Set HOME or XDG_CONFIG_HOME to an absolute path.");
+            _userConfigDir = userConfigDir;
+        }
+
         public string SystemDirName { get; } = "nem";
-        public string DirPath { get => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), SystemDirName); }
+        public string DirPath { get => Path.Combine(_userConfigDir, SystemDirName); }
 
         public string DownloadCacheDirName { get; } = "download";
         public string DownloadCacheDirPath { get => Path.Combine(DirPath, DownloadCacheDirName); }
