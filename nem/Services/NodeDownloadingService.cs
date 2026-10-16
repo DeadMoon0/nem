@@ -132,6 +132,10 @@ public static class NodeDownloadingService
     /// <summary>
     /// Removes the files of the Node distribution (as shipped in the extracted zip)
     /// from the env, so an older Node version does not leave stale files behind.
+    /// The env's tools go with it on purpose: they live inside the distribution's
+    /// top-level folders (node_modules on Windows, bin/ and lib/ on Unix), and a
+    /// tool with native addons is built for one Node ABI. 'nem install' reinstalls
+    /// every declared tool against the new Node right after (ToolService.InstallMissing).
     /// </summary>
     static void RemoveNodeDistribution(string extractedNode, string envDir)
     {
