@@ -21,17 +21,17 @@ public static class IOService
         else
             NemConfigFile.Write(local.ConfigFilePath, new NemConfig { NodeVersion = version });
 
-        string envPath = local.EnvDirPath;
-        if (Directory.Exists(envPath))
+        if (Directory.Exists(local.EnvDirPath))
             AnsiConsole.MarkupLine("[yellow]Skipped " + local.EnvDirName + "-Folder because it already exists.[/]");
-        else
-            Directory.CreateDirectory(envPath);
+        local.EnsureEnvDirPath();
 
+        // The env already ignores itself (see EnsureEnvDirPath); a project .gitignore
+        // that exists gets the entry too, so the rule is visible where people look.
         string gitIgnorePath = Path.Combine(path, ".gitignore");
         string entry = local.EnvDirName;
         if (!File.Exists(gitIgnorePath))
-            AnsiConsole.MarkupLine("[yellow]Skipped editing the .gitignore because it does not exist.[/]");
-        else if (File.ReadAllText(gitIgnorePath).Contains("/" + entry))
+            return;
+        if (File.ReadAllText(gitIgnorePath).Contains("/" + entry))
             AnsiConsole.MarkupLine($"[yellow]Skipped editing the .gitignore because it already has an entry for /{entry}.[/]");
         else
         {

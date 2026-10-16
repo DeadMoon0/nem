@@ -187,5 +187,6 @@ public class IoPathManagerTests
 
         // Calling it again resolves to the same path.
         Assert.Equal(local.EnvDirPath, local.EnsureEnvDirPath());
+        Assert.True(File.Exists(Path.Combine(local.EnvDirPath, ".gitignore")));
     }
 }

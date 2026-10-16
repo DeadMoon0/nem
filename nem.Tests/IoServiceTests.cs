@@ -114,6 +114,55 @@ public class IoServiceTests
 
         NemConfig config = NemConfigFile.Read(Path.Combine(tmp.FullName, "nem.jsonc"));
         Assert.Equal("22.23.2", config.NodeVersion);
+        Assert.False(File.Exists(Path.Combine(tmp.FullName, ".gitignore")));
     }
+
+    /// <summary>
+    /// The env holds the Node distribution and every tool (hundreds of MB), so it
+    /// must never be committed - also when the project has no .gitignore yet and
+    /// 'git init' only runs after 'nem init'.
+    /// </summary>
+    [Fact]
+    public void The_env_is_ignored_by_git_even_without_a_project_gitignore()
+    {
+        using var tmp = new TempDir();
+
+        IOService.InitEnv(tmp.FullName, "22.23.2");
+
+        Assert.Equal(["*"], EnvIgnoreRules(tmp.FullName));
+    }
+
+    [Fact]
+    public void An_env_cleaned_for_a_fresh_install_stays_ignored_by_git()
+    {
+        using var tmp = new TempDir();
+        IOService.InitEnv(tmp.FullName, "22.23.2");
+        string envDir = Path.Combine(tmp.FullName, ".nenv");
+        File.WriteAllText(Path.Combine(envDir, "node.exe"), "");
+
+        NodeDownloadingService.WipeEnvDirectory(envDir);
+
+        Assert.False(File.Exists(Path.Combine(envDir, "node.exe")));
+        Assert.Equal(["*"], EnvIgnoreRules(tmp.FullName));
+    }
+
+    [Fact]
+    public void A_hand_edited_env_gitignore_is_left_alone()
+    {
+        using var tmp = new TempDir();
+        string envDir = Path.Combine(tmp.FullName, ".nenv");
+        Directory.CreateDirectory(envDir);
+        File.WriteAllText(Path.Combine(envDir, ".gitignore"), "*\n!keep.txt\n");
+
+        IOService.InitEnv(tmp.FullName, "22.23.2");
+
+        Assert.Equal(["*", "!keep.txt"], EnvIgnoreRules(tmp.FullName));
+    }
+
+    // The git rules in the env's own .gitignore, without comments and blank lines.
+    static string[] EnvIgnoreRules(string projectDir) =>
+        File.ReadAllLines(Path.Combine(projectDir, ".nenv", ".gitignore"))
+            .Where(line => line.Length > 0 && !line.StartsWith('#'))
+            .ToArray();
 
 }

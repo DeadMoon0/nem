@@ -42,7 +42,7 @@ public static class NodeDownloadingService
         {
             DeleteIfExists(archivePath);
             DeleteDirectoryIfExists(extractedNode);
-            WipeDirectory(envDir);
+            WipeEnvDirectory(envDir);
             AnsiConsole.MarkupLine("[gray]Cleaned previous install.[/]");
         }
 
@@ -579,18 +579,23 @@ public static class NodeDownloadingService
             File.CreateSymbolicLink(dest, linkTarget);
     }
 
-    static void WipeDirectory(string dirPath)
+    /// <summary>
+    /// Empties the env folder for 'nem install --clean'. The env stays ignored by
+    /// git: its own .gitignore goes with everything else and is written again.
+    /// </summary>
+    internal static void WipeEnvDirectory(string envDir)
     {
-        if (!Directory.Exists(dirPath))
+        if (!Directory.Exists(envDir))
             return;
 
-        foreach (string entry in Directory.EnumerateFileSystemEntries(dirPath))
+        foreach (string entry in Directory.EnumerateFileSystemEntries(envDir))
         {
             if (Directory.Exists(entry))
                 Directory.Delete(entry, recursive: true);
             else
                 File.Delete(entry);
         }
+        IOPathManager.EnsureEnvDirIgnoredByGit(envDir);
     }
 
     static void DeleteIfExists(string filePath)

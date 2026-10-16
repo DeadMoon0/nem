@@ -95,7 +95,28 @@ public static class IOPathManager
 
         public string EnvDirName { get; } = ".nenv";
         public string EnvDirPath { get => Path.Combine(path, EnvDirName); }
-        public string EnsureEnvDirPath() { if (!Directory.Exists(EnvDirPath)) Directory.CreateDirectory(EnvDirPath); return EnvDirPath; }
+        /// <summary>
+        /// Creates the env folder if needed and makes sure git ignores it, so every
+        /// command that materializes an env leaves it out of version control.
+        /// </summary>
+        public string EnsureEnvDirPath()
+        {
+            Directory.CreateDirectory(EnvDirPath);
+            EnsureEnvDirIgnoredByGit(EnvDirPath);
+            return EnvDirPath;
+        }
+    }
+
+    /// <summary>
+    /// Writes a .gitignore that ignores everything into the env folder. The env
+    /// ignores itself, so it stays out of git with or without a project .gitignore,
+    /// including when the repository is only created after 'nem init'.
+    /// </summary>
+    public static void EnsureEnvDirIgnoredByGit(string envDirPath)
+    {
+        string path = Path.Combine(envDirPath, ".gitignore");
+        if (!File.Exists(path))
+            File.WriteAllText(path, "# Created by nem: this env is local, 'nem install' rebuilds it from nem.jsonc.\n*\n");
     }
 
     /// <summary>
