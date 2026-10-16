@@ -514,8 +514,9 @@ public static class NodeDownloadingService
 
     /// <summary>
     /// Restores the executable bit on the env's bin directory (Unix). File copies
-    /// of the Node distribution (node, npm, npx, ...) would otherwise lose their
-    /// executable bit, and the symlinks are flattened to regular files.
+    /// of the Node distribution (node, ...) would otherwise lose their executable
+    /// bit. Symlinks (npm, npx, corepack) are skipped: chmod on a link changes its
+    /// target, which lives in lib/ and carries its own mode.
     /// </summary>
     static void EnsureUnixExecutableBits(string envDir)
     {
@@ -529,7 +530,7 @@ public static class NodeDownloadingService
         UnixFileMode executable = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
             | UnixFileMode.GroupRead | UnixFileMode.GroupExecute
             | UnixFileMode.OtherRead | UnixFileMode.OtherExecute;
-        foreach (string file in Directory.EnumerateFiles(binDir))
+        foreach (string file in Directory.EnumerateFiles(binDir).Where(f => new FileInfo(f).LinkTarget == null))
             File.SetUnixFileMode(file, executable);
     }
 
@@ -539,25 +540,39 @@ public static class NodeDownloadingService
     public static string PrimaryNodeBinary(string envDir) =>
         NodeEnvLayout.Create(envDir).NodeBinary;
 
-    static void CopyFilesRecursively(string sourcePath, string targetPath)
+    /// <summary>
+    /// Copies the extracted Node distribution into the env. Symlinks are recreated
+    /// as symlinks with their original target instead of being copied: the Unix
+    /// tarball ships bin/npm as a link to ../lib/node_modules/npm/bin/npm-cli.js,
+    /// whose relative require('../lib/cli.js') only resolves from the link's real path.
+    /// </summary>
+    internal static void CopyFilesRecursively(string sourcePath, string targetPath)
     {
-        foreach (string path in Directory.EnumerateFileSystemEntries(sourcePath, "*", SearchOption.AllDirectories))
+        Directory.CreateDirectory(targetPath);
+        foreach (string path in Directory.EnumerateFileSystemEntries(sourcePath))
         {
-            string rel = Path.GetRelativePath(sourcePath, path);
-
             // install_tools.bat is a legacy VS helper from the Node zip; not needed in the env.
-            if (rel.StartsWith("install_tools.bat", StringComparison.OrdinalIgnoreCase))
+            if (Path.GetFileName(path).Equals("install_tools.bat", StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            string dest = Path.Combine(targetPath, rel);
-            if (Directory.Exists(path))
-                Directory.CreateDirectory(dest);
+            string dest = Path.Combine(targetPath, Path.GetFileName(path));
+            if (new FileInfo(path).LinkTarget is { } linkTarget)
+                CopySymbolicLink(linkTarget, dest, Directory.Exists(path));
+            else if (Directory.Exists(path))
+                CopyFilesRecursively(path, dest);
             else
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
                 File.Copy(path, dest, overwrite: true);
-            }
         }
+    }
+
+    static void CopySymbolicLink(string linkTarget, string dest, bool pointsToDirectory)
+    {
+        if (new FileInfo(dest).LinkTarget != null || File.Exists(dest))
+            File.Delete(dest);
+        if (pointsToDirectory)
+            Directory.CreateSymbolicLink(dest, linkTarget);
+        else
+            File.CreateSymbolicLink(dest, linkTarget);
     }
 
     static void WipeDirectory(string dirPath)
