@@ -1,0 +1,11 @@
+# Line endings that must not depend on core.autocrlf: these files ship in the
+# NuGet package as-is, so a Windows checkout must not rewrite them.
+
+# The Unix proxy runs via its #!/bin/bash shebang; a CRLF there makes Linux
+# look for "bash\r" and fail with "required file not found".
+nem/ProxyFiles/NAME text eol=lf
+*.sh text eol=lf
+
+# cmd.exe misparses labels and GOTO in LF-only batch files.
+*.bat text eol=crlf
+*.cmd text eol=crlf
