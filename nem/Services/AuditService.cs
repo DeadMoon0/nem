@@ -14,12 +14,12 @@ namespace nem.Services;
 public static class AuditService
 {
     // severity -> (rank, color). Higher rank = worse.
-    private static readonly Dictionary<string, (int Rank, string Color)> Severities = new()
+    internal static readonly Dictionary<string, (int Rank, string Color)> Severities = new()
     {
         ["critical"] = (5, "red"),
         ["high"] = (4, "red"),
         ["moderate"] = (3, "yellow"),
-        ["low"] = (2, "dark_yellow"),
+        ["low"] = (2, "olive"),
         ["info"] = (1, "gray"),
     };
 
