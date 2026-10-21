@@ -7,7 +7,7 @@ using Spectre.Console;
 namespace nem.Services;
 
 /// <summary>
-/// Runs a security audit over the env's installed tool tree using the npm
+/// Runs a security audit over the env's tools in the store using the npm
 /// registry's bulk advisory endpoint, and renders the result. Best effort:
 /// any failure is reported as a gray note and never fails the install.
 /// </summary>
@@ -53,9 +53,9 @@ public static class AuditService
     /// which severity, plus where to see them. Used by 'nem install', where a full
     /// advisory table would bury the install's own output.
     /// </summary>
-    public static void ReportSummary(string envDir)
+    public static void ReportSummary(EnvComposition env)
     {
-        AuditReport report = Audit(envDir);
+        AuditReport report = Audit(env);
         ReportHeadline(report);
 
         if (report.Outcome == AuditOutcome.Completed && report.Advisories.Count > 0)
@@ -66,9 +66,9 @@ public static class AuditService
     /// Audits the env and prints the headline plus every advisory. Used by
     /// 'nem audit', where the details are the point.
     /// </summary>
-    public static void ReportDetails(string envDir)
+    public static void ReportDetails(EnvComposition env)
     {
-        AuditReport report = Audit(envDir);
+        AuditReport report = Audit(env);
         ReportHeadline(report);
 
         if (report.Outcome != AuditOutcome.Completed || report.Advisories.Count == 0)
@@ -127,25 +127,36 @@ public static class AuditService
     }
 
     /// <summary>
-    /// Audits the env's installed tool tree against the registry's advisory
-    /// endpoint. Never throws: every failure comes back as an outcome.
+    /// Audits every package of the env's tool entries against the registry's
+    /// advisory endpoint. Never throws: every failure comes back as an outcome.
     /// </summary>
-    public static AuditReport Audit(string envDir)
+    public static AuditReport Audit(EnvComposition env)
     {
-        string modulesRoot = ToolService.ToolModulesRoot(envDir);
-        if (!Directory.Exists(modulesRoot))
-            return new AuditReport(AuditOutcome.NothingToAudit, 0, []);
-
-        IReadOnlyDictionary<string, IReadOnlyList<string>> installed = InstalledPackageScanner.Scan(modulesRoot);
+        IReadOnlyDictionary<string, IReadOnlyList<string>> installed = Merge(env.Tools
+            .Select(tool => ToolService.ToolModulesRoot(tool.Dir))
+            .Where(Directory.Exists)
+            .Select(InstalledPackageScanner.Scan));
         if (installed.Count == 0)
             return new AuditReport(AuditOutcome.NothingToAudit, 0, []);
 
-        var registry = new NpmRegistryClient(ToolService.RunNpmCapture(envDir, new[] { "config", "get", "registry" }));
+        var registry = new NpmRegistryClient(ToolService.RunNpmCapture(env.NodeLayout, ["config", "get", "registry"]));
         return registry.FetchBulkAdvisories(installed).Match(
             ok: advisories => new AuditReport(AuditOutcome.Completed, installed.Count, MatchAdvisories(installed, advisories)),
             failed: (failure, _) => new AuditReport(
                 failure == RegistryFailure.InvalidResponse ? AuditOutcome.InvalidResponse : AuditOutcome.Unavailable, 0, []));
     }
+
+    /// <summary>
+    /// One package list for several tool entries: each package with every version
+    /// any of them carries.
+    /// </summary>
+    internal static IReadOnlyDictionary<string, IReadOnlyList<string>> Merge(IEnumerable<IReadOnlyDictionary<string, IReadOnlyList<string>>> trees) =>
+        trees.SelectMany(tree => tree)
+            .GroupBy(package => package.Key, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<string>)group.SelectMany(package => package.Value).Distinct(StringComparer.Ordinal).ToList(),
+                StringComparer.Ordinal);
 
     /// <summary>
     /// Pairs the registry's advisories with the installed versions they affect,

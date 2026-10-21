@@ -48,4 +48,17 @@ public class AuditMatchingTests
 
         Assert.Equal(["critical", "moderate", "low"], result.Select(a => a.Severity));
     }
+
+    [Fact]
+    public void A_package_several_tools_carry_is_audited_in_every_version_they_carry()
+    {
+        var merged = AuditService.Merge(
+        [
+            new Dictionary<string, IReadOnlyList<string>> { ["minimist"] = ["1.2.5"], ["semver"] = ["7.6.0"] },
+            new Dictionary<string, IReadOnlyList<string>> { ["minimist"] = ["1.2.8", "1.2.5"] },
+        ]);
+
+        Assert.Equal(["1.2.5", "1.2.8"], merged["minimist"]);
+        Assert.Equal(["7.6.0"], merged["semver"]);
+    }
 }

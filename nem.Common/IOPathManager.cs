@@ -6,9 +6,15 @@ public static class IOPathManager
 {
     // Lazy, so a missing config folder fails the commands that need it with a
     // message, not every use of IOPathManager with a type-initializer error.
-    static readonly Lazy<IOPathManagerSystem> _system = new(() => new IOPathManagerSystem(UserConfigDir()));
+    static readonly Lazy<IOPathManagerSystem> _system = new(() =>
+        Environment.GetEnvironmentVariable(HomeVariable) is { Length: > 0 } home
+            ? IOPathManagerSystem.AtNemDir(home)
+            : new IOPathManagerSystem(UserConfigDir()));
 
     public static IOPathManagerSystem System => _system.Value;
+
+    /// <summary>Moves nem's whole folder (store, proxies) elsewhere, e.g. for a test run.</summary>
+    public const string HomeVariable = "NEM_HOME";
 
     /// <summary>
     /// The per-user config folder (%APPDATA% on Windows, $XDG_CONFIG_HOME or
@@ -93,30 +99,11 @@ public static class IOPathManager
         public virtual string ConfigFileName { get => ConfigFileNames[0]; }
         public string ConfigFilePath { get => Path.Combine(path, ConfigFileName); }
 
-        public string EnvDirName { get; } = ".nenv";
-        public string EnvDirPath { get => Path.Combine(path, EnvDirName); }
         /// <summary>
-        /// Creates the env folder if needed and makes sure git ignores it, so every
-        /// command that materializes an env leaves it out of version control.
+        /// The per-project env folder nem used before the shared store. Nothing reads
+        /// it any more; it is only named so nem can say that it may be deleted.
         /// </summary>
-        public string EnsureEnvDirPath()
-        {
-            Directory.CreateDirectory(EnvDirPath);
-            EnsureEnvDirIgnoredByGit(EnvDirPath);
-            return EnvDirPath;
-        }
-    }
-
-    /// <summary>
-    /// Writes a .gitignore that ignores everything into the env folder. The env
-    /// ignores itself, so it stays out of git with or without a project .gitignore,
-    /// including when the repository is only created after 'nem init'.
-    /// </summary>
-    public static void EnsureEnvDirIgnoredByGit(string envDirPath)
-    {
-        string path = Path.Combine(envDirPath, ".gitignore");
-        if (!File.Exists(path))
-            File.WriteAllText(path, "# Created by nem: this env is local, 'nem install' rebuilds it from nem.jsonc.\n*\n");
+        public string LegacyEnvDirPath { get => Path.Combine(path, ".nenv"); }
     }
 
     /// <summary>
@@ -139,31 +126,41 @@ public static class IOPathManager
     /// </summary>
     public class IOPathManagerSystem
     {
-        readonly string _userConfigDir;
-
         /// <param name="userConfigDir">
-        /// The user's config folder. It must be an absolute path: a relative one would
-        /// put the proxy dir (and the PATH entry 'nem setup' writes) relative to
-        /// wherever nem happens to run.
+        /// The user's config folder; nem's folder is 'nem' inside it. It must be an
+        /// absolute path: a relative one would put the proxy dir (and the PATH entry
+        /// 'nem setup' writes) relative to wherever nem happens to run.
         /// </param>
         public IOPathManagerSystem(string userConfigDir)
         {
             if (!Path.IsPathFullyQualified(userConfigDir))
                 throw new InvalidOperationException(
                     $"Cannot determine the user config folder (got '{userConfigDir}'). Set HOME or XDG_CONFIG_HOME to an absolute path.");
-            _userConfigDir = userConfigDir;
+            DirPath = Path.Combine(userConfigDir, "nem");
         }
 
-        public string SystemDirName { get; } = "nem";
-        public string DirPath { get => Path.Combine(_userConfigDir, SystemDirName); }
+        IOPathManagerSystem(string nemDir, bool isNemDir) => DirPath = nemDir;
 
-        public string DownloadCacheDirName { get; } = "download";
-        public string DownloadCacheDirPath { get => Path.Combine(DirPath, DownloadCacheDirName); }
-        public string ExtractCacheDirName { get; } = "extract";
-        public string ExtractCacheDirPath { get => Path.Combine(DirPath, ExtractCacheDirName); }
+        /// <summary>nem's folder set directly (<see cref="HomeVariable"/>), e.g. to keep a test run apart.</summary>
+        public static IOPathManagerSystem AtNemDir(string nemDir) =>
+            Path.IsPathFullyQualified(nemDir)
+                ? new IOPathManagerSystem(nemDir, true)
+                : throw new InvalidOperationException($"{HomeVariable} must be an absolute path (got '{nemDir}').");
+
+        public string DirPath { get; }
+
+        /// <summary>Node versions and tools, shared by every env of this user.</summary>
+        public string StoreDirPath { get => Path.Combine(DirPath, "store"); }
+        /// <summary>Where 'npm install -g' inside an env goes, one folder per Node major version.</summary>
+        public string GlobalsDirPath { get => Path.Combine(DirPath, "globals"); }
+
+        /// <summary>
+        /// The download and extract caches of nem versions before the store. Only
+        /// named so 'nem store prune' can remove them.
+        /// </summary>
+        public IReadOnlyList<string> LegacyCacheDirPaths { get => [Path.Combine(DirPath, "download"), Path.Combine(DirPath, "extract")]; }
+
         public string ProxyDirName { get; } = "proxy";
         public string ProxyDirPath { get => Path.Combine(DirPath, ProxyDirName); }
-        public string LockDirName { get; } = "locks";
-        public string LockDirPath { get => Path.Combine(DirPath, LockDirName); }
     }
 }

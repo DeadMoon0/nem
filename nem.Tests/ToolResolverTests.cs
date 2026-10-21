@@ -9,10 +9,13 @@ namespace nem.Tests;
 /// </summary>
 public class ToolResolverTests
 {
+    /// <summary>The store a test env in <paramref name="root"/> uses.</summary>
+    static EnvStore StoreOf(string root) => new(Path.Combine(root, ".store"), Path.Combine(root, ".globals"));
+
     /// <summary>
-    /// An env that declares <paramref name="packageName"/>, has it installed with
-    /// the given bins, and carries a shim for each bin - the shape a real
-    /// 'nem install' leaves behind.
+    /// An env that declares <paramref name="packageName"/>, with the store holding
+    /// its Node version and the tool, a shim for each bin included - the shape a
+    /// real 'nem install' leaves behind. Returns the tool's store entry.
     /// </summary>
     static string MakeEnv(string root, string packageName, params string[] bins)
     {
@@ -20,22 +23,25 @@ public class ToolResolverTests
             Path.Combine(root, "nem.json"),
             $"{{\"NodeVersion\":\"22.0.0\",\"Tools\":[{{\"ToolName\":\"{packageName}\",\"ToolVersion\":\"1.0.0\"}}]}}");
 
-        string envDir = Path.Combine(root, ".nenv");
+        EnvStore store = StoreOf(root);
+        StoreFixture.CompleteEntry(store.NodeEntryDir("22.0.0"));
+        string entry = store.ToolEntryDir(packageName, "1.0.0", 22);
+        StoreFixture.CompleteEntry(entry);
 
-        // The env's modules root is not 'node_modules' everywhere - Unix installs
-        // under lib/. Asking the layout keeps the fixture the same shape as a real
+        // The modules root is not 'node_modules' everywhere - Unix installs under
+        // lib/. Asking the layout keeps the fixture the same shape as a real
         // install on whichever host the tests run.
-        string modules = Path.Combine(
-            NodeEnvLayout.Create(envDir).ModulesRoot,
-            Path.Combine(packageName.Split('/')));
+        NodeEnvLayout layout = NodeEnvLayout.Create(entry);
+        string modules = Path.Combine(layout.ModulesRoot, Path.Combine(packageName.Split('/')));
         Directory.CreateDirectory(modules);
         string binMap = string.Join(",", bins.Select(bin => $"\"{bin}\":\"bin.js\""));
         File.WriteAllText(Path.Combine(modules, "package.json"), $"{{\"version\":\"1.0.0\",\"bin\":{{{binMap}}}}}");
 
+        Directory.CreateDirectory(layout.BinDir);
         foreach (string bin in bins)
-            File.WriteAllText(Path.Combine(envDir, bin + (OperatingSystem.IsWindows() ? ".cmd" : "")), "shim");
+            File.WriteAllText(Path.Combine(layout.BinDir, bin + (OperatingSystem.IsWindows() ? ".cmd" : "")), "shim");
 
-        return envDir;
+        return entry;
     }
 
     static void MakeLocalPackage(string owner, string packageName, string version)
@@ -51,10 +57,10 @@ public class ToolResolverTests
         using var tmp = new TempDir();
         string envDir = MakeEnv(tmp.FullName, "@angular/cli", "ng");
 
-        var resolution = ToolResolver.Resolve(tmp.FullName, "ng");
+        var resolution = ToolResolver.Resolve(tmp.FullName, "ng", StoreOf(tmp.FullName));
 
         Assert.Equal(ToolResolver.ToolSource.Env, resolution.Source);
-        Assert.Equal(envDir, resolution.EnvDir);
+        Assert.Equal(envDir, Assert.Single(resolution.Env!.Tools).Dir);
         Assert.NotNull(resolution.ExecutablePath);
         Assert.Null(resolution.LocalVersion);
     }
@@ -68,7 +74,7 @@ public class ToolResolverTests
         Directory.CreateDirectory(app);
         MakeLocalPackage(app, "@angular/cli", "20.3.37");
 
-        var resolution = ToolResolver.Resolve(app, "ng");
+        var resolution = ToolResolver.Resolve(app, "ng", StoreOf(tmp.FullName));
 
         Assert.Equal(ToolResolver.ToolSource.Local, resolution.Source);
         Assert.Equal("20.3.37", resolution.LocalVersion);
@@ -83,7 +89,7 @@ public class ToolResolverTests
         string envDir = MakeEnv(tmp.FullName, "@angular/cli", "ng");
         MakeLocalPackage(tmp.FullName, "@angular/cli", "9.9.9");
 
-        var resolution = ToolResolver.Resolve(tmp.FullName, "ng");
+        var resolution = ToolResolver.Resolve(tmp.FullName, "ng", StoreOf(tmp.FullName));
 
         Assert.Equal(ToolResolver.ToolSource.Local, resolution.Source);
         Assert.StartsWith(envDir, resolution.ExecutablePath);
@@ -95,7 +101,7 @@ public class ToolResolverTests
         using var tmp = new TempDir();
         MakeEnv(tmp.FullName, "@angular/cli", "ng");
 
-        var resolution = ToolResolver.Resolve(tmp.FullName, "tsc");
+        var resolution = ToolResolver.Resolve(tmp.FullName, "tsc", StoreOf(tmp.FullName));
 
         Assert.Equal(ToolResolver.ToolSource.Unavailable, resolution.Source);
         Assert.Null(resolution.ExecutablePath);
@@ -112,7 +118,7 @@ public class ToolResolverTests
         if (withEnv)
             MakeEnv(tmp.FullName, "@angular/cli", "ng");
 
-        var resolution = ToolResolver.Resolve(tmp.FullName, "ng");
+        var resolution = ToolResolver.Resolve(tmp.FullName, "ng", StoreOf(tmp.FullName));
 
         Assert.Single(resolution.Chain, step => step.Decided);
     }
@@ -123,7 +129,7 @@ public class ToolResolverTests
         using var tmp = new TempDir();
         MakeEnv(tmp.FullName, "@angular/cli", "ng");
 
-        var resolution = ToolResolver.Resolve(tmp.FullName, "ng");
+        var resolution = ToolResolver.Resolve(tmp.FullName, "ng", StoreOf(tmp.FullName));
 
         // typed name, env, env state, env copy, project copy
         Assert.Equal(5, resolution.Chain.Count);
@@ -135,10 +141,10 @@ public class ToolResolverTests
     {
         using var tmp = new TempDir();
 
-        var resolution = ToolResolver.Resolve(tmp.FullName, "definitely-not-a-real-tool-xyz");
+        var resolution = ToolResolver.Resolve(tmp.FullName, "definitely-not-a-real-tool-xyz", StoreOf(tmp.FullName));
 
         Assert.Equal(ToolResolver.ToolSource.Unavailable, resolution.Source);
-        Assert.Null(resolution.EnvDir);
+        Assert.Null(resolution.Env);
         Assert.Contains(resolution.Chain, step => step.Question == "env");
         Assert.Contains(resolution.Chain, step => step.Question == "system tool" && step.Decided);
     }
@@ -153,7 +159,7 @@ public class ToolResolverTests
         Directory.CreateDirectory(app);
         MakeLocalPackage(app, "@angular/cli", "20.3.37");
 
-        Assert.Equal("20.3.37", ToolResolver.Resolve(app, "ng").LocalVersion);
+        Assert.Equal("20.3.37", ToolResolver.Resolve(app, "ng", StoreOf(tmp.FullName)).LocalVersion);
     }
 
     [Fact]

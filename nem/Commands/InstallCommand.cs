@@ -19,7 +19,7 @@ internal class InstallCommandSettings : CommandSettings
 
     [CommandOption("-c|--clean")]
     [DefaultValue(false)]
-    [Description("If set, removes the cached download and the env folder before installing.")]
+    [Description("Reinstalls the Node version and the tools this env uses, even when the store already has them.")]
     public required bool Clean { get; init; }
 
     [CommandOption("--no-audit")]
@@ -46,7 +46,6 @@ internal class InstallCommand : AsyncCommand<InstallCommandSettings>
             return 1;
         }
 
-        string envDir = local.EnsureEnvDirPath();
-        return await EnvironmentInstaller.InstallAsync(config, envDir, settings.Clean, audit: !settings.NoAudit);
+        return await EnvironmentInstaller.InstallAsync(config, local, reinstall: settings.Clean, audit: !settings.NoAudit);
     }
 }

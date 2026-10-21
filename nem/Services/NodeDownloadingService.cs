@@ -18,134 +18,62 @@ namespace nem.Services;
 public static class NodeDownloadingService
 {
     /// <summary>
-    /// Downloads (or reuses a cached) Node.js version and copies it into the given env directory.
+    /// Makes sure the store holds Node <paramref name="version"/> (an exact
+    /// version). The archive is downloaded and extracted into a temp folder on the
+    /// store's volume and moved into place in one step, then marked complete - so
+    /// the entry is either missing or whole. <paramref name="reinstall"/> replaces
+    /// an entry that is already there ('nem install --clean').
     /// </summary>
-    public static async Task InstallNodeAsync(string version, string envDir, bool clean)
+    public static async Task EnsureNodeEntryAsync(string version, EnvStore store, bool reinstall)
     {
-        if (string.IsNullOrWhiteSpace(version))
-            throw new ArgumentException("A node version is required.", nameof(version));
+        string entryDir = store.NodeEntryDir(version);
+        // Complete entries never change, so this needs no lock - and does not wait
+        // behind an install that works on another part of the store.
+        if (EnvStore.IsComplete(entryDir) && !reinstall)
+        {
+            AnsiConsole.MarkupLine($"[gray]Node {version} is in the store.[/]");
+            return;
+        }
 
-        // Allow a hand-edited config to carry a partial spec ("22"): resolve it
-        // to the newest matching release before downloading.
-        if (IsPartialVersionSpec(version))
-            version = await ResolveNodeVersionAsync(version);
+        using InstallLock? entryLock = store.Lock(entryDir, EnvStore.InstallLockTimeout,
+            onWait: () => AnsiConsole.MarkupLine($"[gray]Another install is putting Node {version} into the store, waiting for it...[/]"));
+        if (entryLock == null)
+            throw new IOException($"Gave up waiting for the other install of Node {version}.");
+
+        if (EnvStore.IsComplete(entryDir) && !reinstall)
+        {
+            AnsiConsole.MarkupLine($"[gray]Node {version} is in the store.[/]");
+            return;
+        }
+
+        // A folder without the marker is an install that never finished.
+        if (Directory.Exists(entryDir) && !store.TryDelete(entryDir))
+            throw new IOException($"Could not remove the incomplete {entryDir}.");
 
         (string tag, string archiveExtension) = GetPlatformPackage(version);
         string fileName = $"{tag}.{archiveExtension}";
-        string url = $"https://nodejs.org/dist/v{version}/{fileName}";
-        string archivePath = Path.Combine(IOPathManager.System.DownloadCacheDirPath, fileName);
-        string extractDir = IOPathManager.System.ExtractCacheDirPath;
-        string extractedNode = Path.Combine(extractDir, tag);
-        string primaryBinary = PrimaryNodeBinary(envDir);
-
-        if (clean)
-        {
-            DeleteIfExists(archivePath);
-            DeleteDirectoryIfExists(extractedNode);
-            WipeEnvDirectory(envDir);
-            AnsiConsole.MarkupLine("[gray]Cleaned previous install.[/]");
-        }
-
-        if (!File.Exists(archivePath))
-            await DownloadAsync(url, archivePath);
-        else
-            AnsiConsole.MarkupLine($"[gray]Using cached {fileName}.[/]");
-
-        if (!Directory.Exists(extractedNode))
-        {
-            AnsiConsole.MarkupLine("[gray]Starting extraction...[/]");
-            Directory.CreateDirectory(extractDir);
-            if (archiveExtension == "zip")
-                ZipFile.ExtractToDirectory(archivePath, extractDir, overwriteFiles: true);
-            else
-                ExtractWithTar(archivePath, extractDir);
-            AnsiConsole.MarkupLine("[gray]Extraction successful.[/]");
-        }
-
-        if (!File.Exists(primaryBinary))
-        {
-            AnsiConsole.MarkupLine("[gray]Starting to copy to .nenv dir...[/]");
-            CopyFilesRecursively(extractedNode, envDir);
-            EnsureUnixExecutableBits(envDir);
-            AnsiConsole.MarkupLine("[green]Copy successful.[/]");
-        }
-        else
-        {
-            string? installedVersion = GetInstalledNodeVersion(envDir);
-            if (installedVersion != null && VersionSpecMatches(version, installedVersion))
-            {
-                AnsiConsole.MarkupLine("[yellow]Node is already installed in the env, nothing to do.[/]");
-            }
-            else
-            {
-                AnsiConsole.MarkupLine(installedVersion != null
-                    ? $"[gray]Node version changed: updating the env from [yellow]{installedVersion}[/] to [green]{version}[/]...[/]"
-                    : $"[gray]The installed Node version could not be determined; re-copying Node {version} into the env...[/]");
-                RemoveNodeDistribution(extractedNode, envDir);
-                CopyFilesRecursively(extractedNode, envDir);
-                EnsureUnixExecutableBits(envDir);
-                AnsiConsole.MarkupLine("[green]Copy successful.[/]");
-            }
-        }
-    }
-
-    /// <summary>
-    /// Runs the env's node to get its exact version (e.g. "22.23.2"), or null when
-    /// it cannot be determined.
-    /// </summary>
-    public static string? GetInstalledNodeVersion(string envDir)
-    {
-        string node = PrimaryNodeBinary(envDir);
-        if (!File.Exists(node))
-            return null;
-
+        string temp = store.NewTempDir();
         try
         {
-            var psi = new ProcessStartInfo(node)
-            {
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                WorkingDirectory = envDir,
-            };
-            psi.ArgumentList.Add("-p");
-            psi.ArgumentList.Add("process.versions.node");
+            string archivePath = Path.Combine(temp, fileName);
+            await DownloadAsync($"https://nodejs.org/dist/v{version}/{fileName}", archivePath);
 
-            using var process = Process.Start(psi);
-            if (process == null)
-                return null;
-            string output = process.StandardOutput.ReadToEnd().Trim();
-            process.StandardError.ReadToEnd();
-            if (!process.WaitForExit(30_000))
-            {
-                process.Kill();
-                return null;
-            }
-            return process.ExitCode == 0 && output.Length > 0 ? output : null;
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
+            AnsiConsole.MarkupLine("[gray]Extracting...[/]");
+            if (archiveExtension == "zip")
+                ZipFile.ExtractToDirectory(archivePath, temp, overwriteFiles: true);
+            else
+                ExtractWithTar(archivePath, temp);
 
-    /// <summary>
-    /// Removes the files of the Node distribution (as shipped in the extracted zip)
-    /// from the env, so an older Node version does not leave stale files behind.
-    /// The env's tools go with it on purpose: they live inside the distribution's
-    /// top-level folders (node_modules on Windows, bin/ and lib/ on Unix), and a
-    /// tool with native addons is built for one Node ABI. 'nem install' reinstalls
-    /// every declared tool against the new Node right after (ToolService.InstallMissing).
-    /// </summary>
-    static void RemoveNodeDistribution(string extractedNode, string envDir)
-    {
-        foreach (string entry in Directory.EnumerateFileSystemEntries(extractedNode))
+            Directory.CreateDirectory(Path.GetDirectoryName(entryDir)!);
+            if (!EnvStore.TryMoveDirectory(Path.Combine(temp, tag), entryDir))
+                throw new IOException($"Could not move Node {version} into {entryDir}.");
+            EnsureUnixExecutableBits(entryDir);
+            EnvStore.MarkComplete(entryDir, DateTime.UtcNow);
+            AnsiConsole.MarkupLine($"[green]Node {version} is in the store.[/]");
+        }
+        finally
         {
-            string dest = Path.Combine(envDir, Path.GetFileName(entry));
-            if (Directory.Exists(dest))
-                Directory.Delete(dest, recursive: true);
-            else if (File.Exists(dest))
-                File.Delete(dest);
+            store.TryDelete(temp);
         }
     }
 
@@ -386,7 +314,7 @@ public static class NodeDownloadingService
             if (!string.Equals(actualSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
             {
                 File.Delete(tmpPath);
-                throw new IOException($"SHA256 mismatch for {fileName}: expected {expectedSha256}, got {actualSha256}. Delete the cached file and try again.");
+                throw new IOException($"SHA256 mismatch for {fileName}: expected {expectedSha256}, got {actualSha256}.");
             }
         }
 
@@ -517,9 +445,8 @@ public static class NodeDownloadingService
     }
 
     /// <summary>
-    /// Restores the executable bit on the env's bin directory (Unix). File copies
-    /// of the Node distribution (node, ...) would otherwise lose their executable
-    /// bit. Symlinks (npm, npx, corepack) are skipped: chmod on a link changes its
+    /// Makes sure the files in a Node entry's bin directory are executable (Unix),
+    /// whatever the extraction left. Symlinks (npm, npx, corepack) are skipped: chmod on a link changes its
     /// target, which lives in lib/ and carries its own mode.
     /// </summary>
     static void EnsureUnixExecutableBits(string envDir)
@@ -536,77 +463,5 @@ public static class NodeDownloadingService
             | UnixFileMode.OtherRead | UnixFileMode.OtherExecute;
         foreach (string file in Directory.EnumerateFiles(binDir).Where(f => new FileInfo(f).LinkTarget == null))
             File.SetUnixFileMode(file, executable);
-    }
-
-    /// <summary>
-    /// node.exe (Windows) or bin/node (Unix) inside the env directory.
-    /// </summary>
-    public static string PrimaryNodeBinary(string envDir) =>
-        NodeEnvLayout.Create(envDir).NodeBinary;
-
-    /// <summary>
-    /// Copies the extracted Node distribution into the env. Symlinks are recreated
-    /// as symlinks with their original target instead of being copied: the Unix
-    /// tarball ships bin/npm as a link to ../lib/node_modules/npm/bin/npm-cli.js,
-    /// whose relative require('../lib/cli.js') only resolves from the link's real path.
-    /// </summary>
-    internal static void CopyFilesRecursively(string sourcePath, string targetPath)
-    {
-        Directory.CreateDirectory(targetPath);
-        foreach (string path in Directory.EnumerateFileSystemEntries(sourcePath))
-        {
-            // install_tools.bat is a legacy VS helper from the Node zip; not needed in the env.
-            if (Path.GetFileName(path).Equals("install_tools.bat", StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            string dest = Path.Combine(targetPath, Path.GetFileName(path));
-            if (new FileInfo(path).LinkTarget is { } linkTarget)
-                CopySymbolicLink(linkTarget, dest, Directory.Exists(path));
-            else if (Directory.Exists(path))
-                CopyFilesRecursively(path, dest);
-            else
-                File.Copy(path, dest, overwrite: true);
-        }
-    }
-
-    static void CopySymbolicLink(string linkTarget, string dest, bool pointsToDirectory)
-    {
-        if (new FileInfo(dest).LinkTarget != null || File.Exists(dest))
-            File.Delete(dest);
-        if (pointsToDirectory)
-            Directory.CreateSymbolicLink(dest, linkTarget);
-        else
-            File.CreateSymbolicLink(dest, linkTarget);
-    }
-
-    /// <summary>
-    /// Empties the env folder for 'nem install --clean'. The env stays ignored by
-    /// git: its own .gitignore goes with everything else and is written again.
-    /// </summary>
-    internal static void WipeEnvDirectory(string envDir)
-    {
-        if (!Directory.Exists(envDir))
-            return;
-
-        foreach (string entry in Directory.EnumerateFileSystemEntries(envDir))
-        {
-            if (Directory.Exists(entry))
-                Directory.Delete(entry, recursive: true);
-            else
-                File.Delete(entry);
-        }
-        IOPathManager.EnsureEnvDirIgnoredByGit(envDir);
-    }
-
-    static void DeleteIfExists(string filePath)
-    {
-        if (File.Exists(filePath))
-            File.Delete(filePath);
-    }
-
-    static void DeleteDirectoryIfExists(string dirPath)
-    {
-        if (Directory.Exists(dirPath))
-            Directory.Delete(dirPath, recursive: true);
     }
 }

@@ -41,7 +41,7 @@ public static class ToolResolver
         string ToolName,
         ToolSource Source,
         string? ExecutablePath,
-        string? EnvDir,
+        EnvComposition? Env,
         string? LocalPackageDir,
         string? LocalVersion,
         IReadOnlyList<ResolutionStep> Chain);
@@ -51,7 +51,10 @@ public static class ToolResolver
     /// <paramref name="cwd"/>. Never throws and never starts anything: it only
     /// looks, so callers can report the outcome or act on it.
     /// </summary>
-    public static ToolResolution Resolve(string cwd, string toolName)
+    public static ToolResolution Resolve(string cwd, string toolName) => Resolve(cwd, toolName, EnvStore.Default);
+
+    /// <inheritdoc cref="Resolve(string, string)"/>
+    public static ToolResolution Resolve(string cwd, string toolName, EnvStore store)
     {
         var chain = new List<ResolutionStep>();
 
@@ -74,35 +77,43 @@ public static class ToolResolver
         }
 
         chain.Add(new ResolutionStep("env", env.DirPath));
-        chain.Add(new ResolutionStep("env state", AutoInstaller.Describe(
-            AutoInstaller.Inspect(env),
-            AutoInstaller.IsOptedOut(Environment.GetEnvironmentVariable(AutoInstaller.OptOutVariable)))));
 
-        // 3. Does the env carry the tool?
-        string? envTool = ProxyService.ResolveToolInEnv(env.EnvDirPath, toolName);
+        // 3. Does the store hold what the env declares?
+        AutoInstaller.EnvState state = AutoInstaller.Inspect(env, store);
+        bool optedOut = AutoInstaller.IsOptedOut(Environment.GetEnvironmentVariable(AutoInstaller.OptOutVariable));
+        if (state is not AutoInstaller.EnvState.Composed { Env: var composition })
+        {
+            chain.Add(new ResolutionStep("env state", AutoInstaller.Describe(state, optedOut), Decided: true));
+            return new ToolResolution(toolName, ToolSource.Unavailable, null, null, null, null, chain);
+        }
+        chain.Add(new ResolutionStep("env state", AutoInstaller.Describe(state, optedOut)));
+
+        // 4. Does the env carry the tool?
+        string? envTool = composition.ResolveCommand(toolName);
         if (envTool == null)
         {
-            chain.Add(new ResolutionStep("env copy", "not installed in this env", Decided: true));
-            return new ToolResolution(toolName, ToolSource.Unavailable, null, env.EnvDirPath, null, null, chain);
+            chain.Add(new ResolutionStep("env copy", composition.IsInstalled ? "not installed in this env" : "not in the store yet", Decided: true));
+            return new ToolResolution(toolName, ToolSource.Unavailable, null, composition, null, null, chain);
         }
 
         chain.Add(new ResolutionStep("env copy", envTool));
 
-        // 4. A copy nearer the cwd may take over once the env's copy is running -
+        // 5. A copy nearer the cwd may take over once the env's copy is running -
         //    npm scripts always use it, and some CLIs hand over to it themselves.
         //    The command name is not the package name ('ng' ships in @angular/cli),
-        //    so the env's own declaration is what says where to look.
-        string packageName = PackageProviding(env, envDir: env.EnvDirPath, toolName);
+        //    so the env's own declaration is what says where to look; for a
+        //    command it does not declare, the name is the best guess available.
+        string packageName = composition.ToolProviding(toolName)?.Name ?? toolName;
         string? localDir = FindLocalPackageDir(cwd, packageName);
         string? localVersion = localDir == null ? null : ReadPackageVersion(localDir);
         if (localDir != null)
         {
             chain.Add(new ResolutionStep("project copy", localVersion == null ? localDir : $"{localVersion} in {localDir}", Decided: true));
-            return new ToolResolution(toolName, ToolSource.Local, envTool, env.EnvDirPath, localDir, localVersion, chain);
+            return new ToolResolution(toolName, ToolSource.Local, envTool, composition, localDir, localVersion, chain);
         }
 
         chain.Add(new ResolutionStep("project copy", "none above this folder", Decided: true));
-        return new ToolResolution(toolName, ToolSource.Env, envTool, env.EnvDirPath, null, null, chain);
+        return new ToolResolution(toolName, ToolSource.Env, envTool, composition, null, null, chain);
     }
 
     /// <summary>
@@ -122,35 +133,6 @@ public static class ToolResolver
         return new ResolutionStep("typed name", shadow.Reason == PathPrecedence.Unreachable.NoProxy
             ? "no proxy - the name runs whatever else is on the PATH"
             : $"answered by {shadow.ShadowingDir} before the nem proxy");
-    }
-
-    /// <summary>
-    /// The package that ships <paramref name="toolName"/> as a binary, according to
-    /// what the env declares and installed. A command rarely matches its package
-    /// name - 'ng' comes from @angular/cli, 'tsc' from typescript - so looking for
-    /// the command under node_modules would find nothing. Falls back to the command
-    /// name for a tool the env does not declare, which is the best guess available.
-    /// </summary>
-    static string PackageProviding(IOPathManager.IOPathManagerEnv env, string envDir, string toolName)
-    {
-        try
-        {
-            foreach (Common.Models.NemToolConfig tool in NemConfigFile.Read(env.ConfigFilePath).Tools)
-            {
-                foreach (string bin in ToolService.ReadToolBins(envDir, tool.ToolName))
-                {
-                    if (string.Equals(bin, toolName, StringComparison.OrdinalIgnoreCase))
-                        return tool.ToolName;
-                }
-            }
-        }
-        catch (Exception)
-        {
-            // An unreadable config tells us nothing about which package owns the
-            // command; the guess below is no worse than failing the whole lookup.
-        }
-
-        return toolName;
     }
 
     /// <summary>

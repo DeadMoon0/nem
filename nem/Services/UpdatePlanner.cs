@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using nem.Common.Models;
 
@@ -16,7 +17,7 @@ public sealed class ToolUpdateEntry
     /// <summary>The version declared in the nem config (the resolved concrete one).</summary>
     public required string DeclaredVersion { get; init; }
 
-    /// <summary>The version actually installed in the env, or null.</summary>
+    /// <summary>The declared version when the store holds it, or null.</summary>
     public string? InstalledVersion { get; init; }
 
     /// <summary>The newest supported version, or null when it could not be resolved.</summary>
@@ -40,7 +41,7 @@ public sealed class UpdatePlan
     /// <summary>The Node version declared in the nem config ("" when unset).</summary>
     public required string DeclaredNodeVersion { get; init; }
 
-    /// <summary>The Node version installed in the env, or null.</summary>
+    /// <summary>The declared Node version when the store holds it, or null.</summary>
     public string? InstalledNodeVersion { get; init; }
 
     /// <summary>The newest stable nodejs.org release, or null when it could not be determined.</summary>
@@ -54,13 +55,13 @@ public sealed class UpdatePlan
 }
 
 /// <summary>
-/// Node version facts for an env: what is installed and what the newest stable
-/// nodejs.org release is.
+/// Node version facts for an env: whether the store holds its Node version and
+/// what the newest stable nodejs.org release is.
 /// </summary>
 public interface INodeVersionSource
 {
-    /// <summary>The Node version installed in the env, or null.</summary>
-    string? GetInstalledNodeVersion(string envDir);
+    /// <summary>The config's Node version when the store holds it, or null.</summary>
+    string? GetInstalledNodeVersion(NemConfig config);
 
     /// <summary>The newest stable Node release, or null when it cannot be determined.</summary>
     Task<string?> GetLatestStableNodeVersionAsync();
@@ -68,15 +69,15 @@ public interface INodeVersionSource
 
 /// <summary>
 /// Tool version facts for an env: what newest version each tool can resolve to
-/// and what is installed.
+/// and whether the store holds the declared one.
 /// </summary>
 public interface IToolVersionSource
 {
     /// <summary>The newest resolvable version of a tool, or null (with <paramref name="error"/>).</summary>
     string? ResolveLatestVersion(string packageName, string nodeVersion, out string? error);
 
-    /// <summary>The version of a tool installed in the env, or null.</summary>
-    string? GetInstalledVersion(string envDir, string packageName);
+    /// <summary>The config's version of a tool when the store holds it, or null.</summary>
+    string? GetInstalledVersion(NemConfig config, string packageName);
 }
 
 /// <summary>
@@ -85,8 +86,10 @@ public interface IToolVersionSource
 /// </summary>
 public sealed class NodeVersionSource : INodeVersionSource
 {
-    public string? GetInstalledNodeVersion(string envDir) =>
-        NodeDownloadingService.GetInstalledNodeVersion(envDir);
+    public string? GetInstalledNodeVersion(NemConfig config) =>
+        EnvComposition.Compose(config, EnvStore.Default) is EnvComposition.Result.Ok ok && EnvStore.IsComplete(ok.Env.NodeDir)
+            ? ok.Env.NodeVersion
+            : null;
 
     public async Task<string?> GetLatestStableNodeVersionAsync()
     {
@@ -109,8 +112,11 @@ public sealed class ToolVersionSource : IToolVersionSource
     public string? ResolveLatestVersion(string packageName, string nodeVersion, out string? error) =>
         ToolService.ResolveVersion(packageName, range: null, nodeVersion, out error);
 
-    public string? GetInstalledVersion(string envDir, string packageName) =>
-        ToolService.GetInstalledToolVersion(envDir, packageName);
+    public string? GetInstalledVersion(NemConfig config, string packageName) =>
+        EnvComposition.Compose(config, EnvStore.Default) is EnvComposition.Result.Ok ok
+            && ok.Env.Tools.FirstOrDefault(t => t.Name == packageName) is { } tool && EnvStore.IsComplete(tool.Dir)
+            ? tool.Version
+            : null;
 }
 
 /// <summary>
@@ -132,16 +138,15 @@ public sealed class UpdatePlanner
     public static UpdatePlanner Create() => new(new NodeVersionSource(), new ToolVersionSource());
 
     /// <summary>
-    /// Plans an update for the env at envDir.
+    /// Plans an update for an env.
     /// </summary>
     /// <param name="config">The project's nem config.</param>
-    /// <param name="envDir">The .nenv directory.</param>
     /// <param name="nodeReference">
     /// The Node version that "newest supported" tool versions are resolved
     /// against. Defaults to the declared one; pass the new Node version when the
     /// user already accepted a Node update so tool versions stay compatible.
     /// </param>
-    public async Task<UpdatePlan> CreateAsync(NemConfig config, string envDir, string? nodeReference = null)
+    public async Task<UpdatePlan> CreateAsync(NemConfig config, string? nodeReference = null)
     {
         string declaredNode = config.NodeVersion ?? "";
         string? latestNode = await _nodeVersions.GetLatestStableNodeVersionAsync();
@@ -165,7 +170,7 @@ public sealed class UpdatePlanner
             {
                 Name = tool.ToolName,
                 DeclaredVersion = tool.ToolVersion,
-                InstalledVersion = _toolVersions.GetInstalledVersion(envDir, tool.ToolName),
+                InstalledVersion = _toolVersions.GetInstalledVersion(config, tool.ToolName),
                 LatestVersion = latest,
                 Error = error,
             });
@@ -174,7 +179,7 @@ public sealed class UpdatePlanner
         return new UpdatePlan
         {
             DeclaredNodeVersion = declaredNode,
-            InstalledNodeVersion = _nodeVersions.GetInstalledNodeVersion(envDir),
+            InstalledNodeVersion = _nodeVersions.GetInstalledNodeVersion(config),
             LatestNodeVersion = latestNode,
             Tools = tools,
         };

@@ -20,25 +20,6 @@ public static class IOService
             ReconcileNodeVersion(existingEnv, version);
         else
             NemConfigFile.Write(local.ConfigFilePath, new NemConfig { NodeVersion = version });
-
-        if (Directory.Exists(local.EnvDirPath))
-            AnsiConsole.MarkupLine("[yellow]Skipped " + local.EnvDirName + "-Folder because it already exists.[/]");
-        local.EnsureEnvDirPath();
-
-        // The env already ignores itself (see EnsureEnvDirPath); a project .gitignore
-        // that exists gets the entry too, so the rule is visible where people look.
-        string gitIgnorePath = Path.Combine(path, ".gitignore");
-        string entry = local.EnvDirName;
-        if (!File.Exists(gitIgnorePath))
-            return;
-        if (File.ReadAllText(gitIgnorePath).Contains("/" + entry))
-            AnsiConsole.MarkupLine($"[yellow]Skipped editing the .gitignore because it already has an entry for /{entry}.[/]");
-        else
-        {
-            string content = File.ReadAllText(gitIgnorePath);
-            string prefix = content.Length == 0 ? "" : (content.EndsWith("\n") ? "" : "\n");
-            File.WriteAllText(gitIgnorePath, content + prefix + $"#nem\n/{entry}\n");
-        }
     }
 
     /// <summary>
@@ -78,13 +59,12 @@ public static class IOService
     }
 
     /// <summary>
-    /// Creates the nem system directory structure (cache, extract and proxy folders).
+    /// Creates the nem system directory structure (store and proxy folders).
     /// </summary>
     public static void EnsureSystemDirectories()
     {
         if (!Directory.Exists(IOPathManager.System.DirPath)) Directory.CreateDirectory(IOPathManager.System.DirPath);
-        if (!Directory.Exists(IOPathManager.System.DownloadCacheDirPath)) Directory.CreateDirectory(IOPathManager.System.DownloadCacheDirPath);
-        if (!Directory.Exists(IOPathManager.System.ExtractCacheDirPath)) Directory.CreateDirectory(IOPathManager.System.ExtractCacheDirPath);
+        if (!Directory.Exists(IOPathManager.System.StoreDirPath)) Directory.CreateDirectory(IOPathManager.System.StoreDirPath);
         if (!Directory.Exists(IOPathManager.System.ProxyDirPath)) Directory.CreateDirectory(IOPathManager.System.ProxyDirPath);
     }
 

@@ -1,4 +1,5 @@
 using nem.Commands;
+using nem.Commands.Store;
 using nem.Commands.Tool;
 using Spectre.Console.Cli;
 using System.Reflection;
@@ -24,10 +25,10 @@ internal class Program
                 .WithDescription("Lists the known vulnerabilities in the env's installed tools. 'nem install' only prints the count.");
 
             config.AddCommand<InitCommand>("init")
-                .WithDescription("Creates a nem env (nem.jsonc + .nenv folder) for a project.");
+                .WithDescription("Creates a nem env (a nem.jsonc) for a project.");
 
             config.AddCommand<InstallCommand>("install")
-                .WithDescription("Downloads/copies the Node version and installs tool proxies from the nem config.");
+                .WithDescription("Puts the env's Node version and tools into the store and creates their proxies. Tools also do this on first use.");
 
             config.AddCommand<RunCommand>("run")
                 .WithDescription("Runs a tool from the nem env (or the system fallback). Tool arguments follow the tool name.");
@@ -40,6 +41,15 @@ internal class Program
 
             config.AddCommand<WhichCommand>("which")
                 .WithDescription("Explains which copy of a tool a typed name runs - global, env or a project copy - and why.");
+
+            config.AddBranch("store", c =>
+            {
+                c.SetDescription("The store that holds the Node versions and tools of every env.");
+                c.AddCommand<StoreCommandList>("list")
+                    .WithDescription("Lists the store's entries and when each was last used.");
+                c.AddCommand<StoreCommandPrune>("prune")
+                    .WithDescription("Removes entries no tool start used for a while (default 180 days).");
+            });
 
             config.AddBranch("tool", c =>
             {

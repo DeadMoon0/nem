@@ -5,13 +5,13 @@ using nem.Services;
 namespace nem.Tests;
 
 /// <summary>
-/// nem.jsonc / .nenv creation, including what happens to an env that still carries
-/// the older nem.json.
+/// nem.jsonc creation, including what happens to an env that still carries the
+/// older nem.json.
 /// </summary>
 public class IoServiceTests
 {
     [Fact]
-    public void InitEnv_Creates_Config_And_Env_Dir()
+    public void InitEnv_Creates_Only_The_Config()
     {
         using var tmp = new TempDir();
         File.WriteAllText(Path.Combine(tmp.FullName, ".gitignore"), "node_modules\n");
@@ -23,12 +23,10 @@ public class IoServiceTests
         Assert.Equal("22.23.2", config.NodeVersion);
         Assert.Equal(NemConfigVersion.Current, config.Version);
         Assert.Contains(NemConfigFile.Header, File.ReadAllText(configPath));
-        Assert.True(Directory.Exists(Path.Combine(tmp.FullName, ".nenv")));
 
-        string gitignore = File.ReadAllText(Path.Combine(tmp.FullName, ".gitignore"));
-        Assert.StartsWith("node_modules\n", gitignore);
-        Assert.Contains("#nem", gitignore);
-        Assert.Contains("/.nenv", gitignore);
+        // Node and the tools live in the shared store; the project gets nothing to ignore.
+        Assert.Equal([".gitignore", "nem.jsonc"], Directory.EnumerateFileSystemEntries(tmp.FullName).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+        Assert.Equal("node_modules\n", File.ReadAllText(Path.Combine(tmp.FullName, ".gitignore")));
     }
 
     [Fact]
@@ -91,78 +89,4 @@ public class IoServiceTests
 
         Assert.Equal("22.23.2", NemConfigFile.Read(Path.Combine(tmp.FullName, "nem.jsonc")).NodeVersion);
     }
-
-    [Fact]
-    public void InitEnv_Does_Not_Duplicate_The_GitIgnore_Entry()
-    {
-        using var tmp = new TempDir();
-        File.WriteAllText(Path.Combine(tmp.FullName, ".gitignore"), "");
-
-        IOService.InitEnv(tmp.FullName, "22.23.2");
-        IOService.InitEnv(tmp.FullName, "22.23.2");
-
-        string gitignore = File.ReadAllText(Path.Combine(tmp.FullName, ".gitignore"));
-        Assert.Equal(1, gitignore.Split("/.nenv", StringSplitOptions.None).Length - 1);
-    }
-
-    [Fact]
-    public void InitEnv_Survives_A_Missing_GitIgnore()
-    {
-        using var tmp = new TempDir();
-
-        IOService.InitEnv(tmp.FullName, "22.23.2");
-
-        NemConfig config = NemConfigFile.Read(Path.Combine(tmp.FullName, "nem.jsonc"));
-        Assert.Equal("22.23.2", config.NodeVersion);
-        Assert.False(File.Exists(Path.Combine(tmp.FullName, ".gitignore")));
-    }
-
-    /// <summary>
-    /// The env holds the Node distribution and every tool (hundreds of MB), so it
-    /// must never be committed - also when the project has no .gitignore yet and
-    /// 'git init' only runs after 'nem init'.
-    /// </summary>
-    [Fact]
-    public void The_env_is_ignored_by_git_even_without_a_project_gitignore()
-    {
-        using var tmp = new TempDir();
-
-        IOService.InitEnv(tmp.FullName, "22.23.2");
-
-        Assert.Equal(["*"], EnvIgnoreRules(tmp.FullName));
-    }
-
-    [Fact]
-    public void An_env_cleaned_for_a_fresh_install_stays_ignored_by_git()
-    {
-        using var tmp = new TempDir();
-        IOService.InitEnv(tmp.FullName, "22.23.2");
-        string envDir = Path.Combine(tmp.FullName, ".nenv");
-        File.WriteAllText(Path.Combine(envDir, "node.exe"), "");
-
-        NodeDownloadingService.WipeEnvDirectory(envDir);
-
-        Assert.False(File.Exists(Path.Combine(envDir, "node.exe")));
-        Assert.Equal(["*"], EnvIgnoreRules(tmp.FullName));
-    }
-
-    [Fact]
-    public void A_hand_edited_env_gitignore_is_left_alone()
-    {
-        using var tmp = new TempDir();
-        string envDir = Path.Combine(tmp.FullName, ".nenv");
-        Directory.CreateDirectory(envDir);
-        File.WriteAllText(Path.Combine(envDir, ".gitignore"), "*\n!keep.txt\n");
-
-        IOService.InitEnv(tmp.FullName, "22.23.2");
-
-        Assert.Equal(["*", "!keep.txt"], EnvIgnoreRules(tmp.FullName));
-    }
-
-    // The git rules in the env's own .gitignore, without comments and blank lines.
-    static string[] EnvIgnoreRules(string projectDir) =>
-        File.ReadAllLines(Path.Combine(projectDir, ".nenv", ".gitignore"))
-            .Where(line => line.Length > 0 && !line.StartsWith('#'))
-            .ToArray();
-
 }

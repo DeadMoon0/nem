@@ -99,21 +99,21 @@ public static class ToolService
             return 1;
         }
 
+        // The commands come from the store entry the env used, read before the
+        // declaration goes. The entry itself stays: other envs may use it, and
+        // 'nem store prune' removes it once nobody does.
+        List<string> bins = EnvComposition.Compose(config, EnvStore.Default) is EnvComposition.Result.Ok ok
+            && ok.Env.Tools.FirstOrDefault(t => t.Name == tool.ToolName) is { } entry && EnvStore.IsComplete(entry.Dir)
+            ? ReadToolBins(entry.Dir, entry.Name)
+            : [];
+
         config.Tools.Remove(tool);
         NemConfigFile.Write(env.ConfigFilePath, config);
         AnsiConsole.MarkupLine($"Removed {packageName} from {Markup.Escape(env.ConfigFilePath)}.");
 
-        string envDir = env.EnvDirPath;
-        if (!IsToolInstalled(envDir, packageName))
-            return 0;
-
-        List<string> bins = ReadToolBins(envDir, packageName);
-        int exit = RunNpm(envDir, new[] { "uninstall", "-g", packageName }, capture: false, out _);
         foreach (string bin in bins)
             DeleteProxy(bin);
-
-        AnsiConsole.MarkupLine($"Uninstalled {packageName} from the env.");
-        return exit;
+        return 0;
     }
 
     public static int List()
@@ -121,13 +121,14 @@ public static class ToolService
         if (!TryGetEnvContext(out NemConfig? config, out IOPathManager.IOPathManagerEnv? env) || config == null || env == null)
             return NotInEnv();
 
-        string envDir = env.EnvDirPath;
+        if (!TryCompose(config, out EnvComposition? composition))
+            return 1;
 
         // Which of this env's commands a typed name actually reaches. Installed is
         // not the same as reachable: a missing or shadowed proxy sends the name
         // somewhere else entirely, which is invisible without asking.
         var unreachable = PathPrecedence
-            .FindShadowsOnProcessPath(EnvironmentInstaller.ExpectedCommands(config, envDir))
+            .FindShadowsOnProcessPath(EnvironmentInstaller.ExpectedCommands(composition))
             .ToDictionary(shadow => shadow.ToolName, StringComparer.OrdinalIgnoreCase);
 
         var table = new Table();
@@ -139,17 +140,17 @@ public static class ToolService
         string cwd = Directory.GetCurrentDirectory();
         bool anyLocal = false;
 
-        foreach (var tool in config.Tools)
+        foreach (EnvComposition.ToolEntry tool in composition.Tools)
         {
-            bool installed = IsToolInstalled(envDir, tool.ToolName);
-            string? localVersion = FindLocalToolVersion(cwd, tool.ToolName);
-            anyLocal |= localVersion != null && !string.Equals(localVersion, tool.ToolVersion, StringComparison.OrdinalIgnoreCase);
+            bool installed = EnvStore.IsComplete(tool.Dir);
+            string? localVersion = FindLocalToolVersion(cwd, tool.Name);
+            anyLocal |= localVersion != null && !string.Equals(localVersion, tool.Version, StringComparison.OrdinalIgnoreCase);
 
             table.AddRow(
-                tool.ToolName,
-                tool.ToolVersion,
+                tool.Name,
+                tool.Version,
                 installed ? "[green]installed[/]" : "[yellow]not installed[/]",
-                installed ? DescribeReach(ReadToolBins(envDir, tool.ToolName), unreachable, localVersion, tool.ToolVersion) : "-");
+                installed ? DescribeReach(ReadToolBins(tool.Dir, tool.Name), unreachable, localVersion, tool.Version) : "-");
         }
 
         AnsiConsole.Write(table);
@@ -169,7 +170,7 @@ public static class ToolService
         // actually found in the proxy one, so a surprising verdict can be checked
         // rather than guessed at.
         var proxied = PathPrecedence.ProxiedCommandNames().OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToList();
-        AnsiConsole.MarkupLine($"[gray]env      : {Markup.Escape(envDir)}[/]");
+        AnsiConsole.MarkupLine($"[gray]node     : {Markup.Escape(composition.NodeVersion)} in {Markup.Escape(composition.NodeDir)}[/]");
         AnsiConsole.MarkupLine($"[gray]proxies  : {Markup.Escape(IOPathManager.System.ProxyDirPath)}[/]");
         AnsiConsole.MarkupLine($"[gray]provides : {Markup.Escape(proxied.Count == 0 ? "(nothing)" : string.Join(", ", proxied))}[/]");
         AnsiConsole.MarkupLine($"[gray]on PATH  : {(IOService.ProxyDirIsOnProcessPath() ? "yes" : "no")}[/]");
@@ -239,50 +240,89 @@ public static class ToolService
     }
 
     /// <summary>
-    /// Installs every tool declared in the nem config that is missing from the env, then
-    /// (re)creates the proxies for all declared tools. Called by 'nem install'.
+    /// Puts every declared tool the store lacks into it, then (re)creates the
+    /// proxies for all declared tools. Called by 'nem install'; the Node entry must
+    /// be complete, since its npm does the installing.
     /// </summary>
-    public static int InstallMissing(NemConfig config, string envDir)
+    public static int InstallTools(EnvComposition env, EnvStore store, bool reinstall)
     {
         int exit = 0;
-        bool anythingMissing = false;
-        foreach (var tool in config.Tools)
+        int installed = 0;
+        foreach (EnvComposition.ToolEntry tool in env.Tools)
         {
-            if (IsToolInstalled(envDir, tool.ToolName))
-            {
-                // Re-install when what is on disk no longer matches the declared
-                // version (e.g. after 'nem update' changed the config).
-                string? installedVersion = GetInstalledToolVersion(envDir, tool.ToolName);
-                if (installedVersion != null &&
-                    string.Equals(installedVersion, tool.ToolVersion, StringComparison.OrdinalIgnoreCase))
-                    continue;
-            }
-            anythingMissing = true;
-            AnsiConsole.MarkupLine($"Installing [green]{tool.ToolName}@{tool.ToolVersion}[/] ...");
-            // --no-audit: npm's inline audit summary is re-emitted (with details) by
-            // AuditService after the install, so it stays the single source of truth.
-            int result = RunNpm(envDir, new[] { "install", "-g", "--no-audit", $"{tool.ToolName}@{tool.ToolVersion}" }, capture: false, out _);
+            int result = EnsureToolEntry(tool, env, store, reinstall, out bool didInstall);
             if (result != 0)
                 exit = result;
+            if (didInstall)
+                installed++;
         }
 
-        if (!anythingMissing)
-            AnsiConsole.MarkupLine("All tools up to date.");
+        if (installed == 0 && exit == 0)
+            AnsiConsole.MarkupLine(env.Tools.Count == 0 ? "[gray]No tools declared.[/]" : "[gray]All tools are in the store.[/]");
 
-        foreach (var tool in config.Tools)
+        foreach (EnvComposition.ToolEntry tool in env.Tools.Where(t => EnvStore.IsComplete(t.Dir)))
         {
-            if (!IsToolInstalled(envDir, tool.ToolName))
-                continue;
-            foreach (string bin in ReadToolBins(envDir, tool.ToolName))
+            string binDir = NodeEnvLayout.Create(tool.Dir).BinDir;
+            foreach (string bin in ReadToolBins(tool.Dir, tool.Name))
             {
-                // Only proxy bins that actually exist in the env (avoids ghosts for
-                // packages without a bin entry).
-                if (ProxyService.ResolveToolInEnv(envDir, bin) != null)
+                // Only proxy bins that actually exist (avoids ghosts for packages
+                // without a bin entry).
+                if (EnvComposition.FindCommand([binDir], bin) != null)
                     ProxyService.TryInstallTool(bin);
             }
         }
 
         return exit;
+    }
+
+    /// <summary>
+    /// Makes sure the store holds one tool version, installed with the env's Node.
+    /// npm installs straight into the entry; the completion marker, written last,
+    /// is what makes it count - a failed or interrupted install is removed again.
+    /// </summary>
+    static int EnsureToolEntry(EnvComposition.ToolEntry tool, EnvComposition env, EnvStore store, bool reinstall, out bool didInstall)
+    {
+        didInstall = false;
+        // Complete entries never change, so this needs no lock.
+        if (EnvStore.IsComplete(tool.Dir) && !reinstall)
+            return 0;
+
+        using InstallLock? entryLock = store.Lock(tool.Dir, EnvStore.InstallLockTimeout,
+            onWait: () => AnsiConsole.MarkupLine($"[gray]Another install is putting {Markup.Escape(tool.Name)}@{Markup.Escape(tool.Version)} into the store, waiting for it...[/]"));
+        if (entryLock == null)
+        {
+            AnsiConsole.MarkupLine($"[red]Gave up waiting for the other install of {Markup.Escape(tool.Name)}@{Markup.Escape(tool.Version)}.[/]");
+            return 1;
+        }
+
+        if (EnvStore.IsComplete(tool.Dir) && !reinstall)
+            return 0;
+
+        if (Directory.Exists(tool.Dir) && !store.TryDelete(tool.Dir))
+        {
+            AnsiConsole.MarkupLine($"[red]Could not remove the incomplete {Markup.Escape(tool.Dir)}.[/]");
+            return 1;
+        }
+
+        AnsiConsole.MarkupLine($"Installing [green]{Markup.Escape(tool.Name)}@{Markup.Escape(tool.Version)}[/] into the store ...");
+        // --no-audit: npm's inline audit summary is re-emitted (with details) by
+        // AuditService after the install, so it stays the single source of truth.
+        int result = RunNpm(env.NodeLayout, tool.Dir, ["install", "-g", "--no-audit", $"{tool.Name}@{tool.Version}"], capture: false, out _);
+        if (result == 0 && !IsToolInstalled(tool.Dir, tool.Name))
+        {
+            AnsiConsole.MarkupLine($"[red]npm finished, but {Markup.Escape(tool.Name)} is not in {Markup.Escape(tool.Dir)}.[/]");
+            result = 1;
+        }
+
+        if (result != 0)
+        {
+            store.TryDelete(tool.Dir);
+            return result;
+        }
+
+        EnvStore.MarkComplete(tool.Dir, DateTime.UtcNow);
+        didInstall = true;
+        return 0;
     }
 
     // ---------- helpers ----------
@@ -325,41 +365,22 @@ public static class ToolService
         !string.IsNullOrWhiteSpace(name) && ValidPackageName.IsMatch(name);
 
     /// <summary>
-    /// The global modules root of the env (where 'npm -g' installs packages).
+    /// Where 'npm -g --prefix <paramref name="prefixDir"/>' puts packages - the
+    /// modules folder of a store entry.
     /// </summary>
-    public static string ToolModulesRoot(string envDir) =>
-        NodeEnvLayout.Create(envDir).ModulesRoot;
+    public static string ToolModulesRoot(string prefixDir) =>
+        NodeEnvLayout.Create(prefixDir).ModulesRoot;
 
-    public static bool IsToolInstalled(string envDir, string packageName) =>
-        File.Exists(Path.Combine(ToolModulesRoot(envDir), packageName, "package.json"));
-
-    /// <summary>
-    /// The version of the package currently on disk in the env, or null.
-    /// </summary>
-    public static string? GetInstalledToolVersion(string envDir, string packageName)
-    {
-        string packageJson = Path.Combine(ToolModulesRoot(envDir), packageName, "package.json");
-        if (!File.Exists(packageJson))
-            return null;
-        try
-        {
-            var doc = JObject.Parse(File.ReadAllText(packageJson));
-            string? version = doc["version"]?.ToString();
-            return string.IsNullOrWhiteSpace(version) ? null : version;
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
+    public static bool IsToolInstalled(string prefixDir, string packageName) =>
+        File.Exists(Path.Combine(ToolModulesRoot(prefixDir), packageName, "package.json"));
 
     /// <summary>
-    /// Reads the bin entries of an installed package; falls back to a name guess.
+    /// Reads the bin entries of a package installed under a prefix; falls back to a name guess.
     /// </summary>
-    public static List<string> ReadToolBins(string envDir, string packageName)
+    public static List<string> ReadToolBins(string prefixDir, string packageName)
     {
         var bins = new List<string>();
-        string packageJson = Path.Combine(ToolModulesRoot(envDir), packageName, "package.json");
+        string packageJson = Path.Combine(ToolModulesRoot(prefixDir), packageName, "package.json");
         if (File.Exists(packageJson))
         {
             try
@@ -379,34 +400,35 @@ public static class ToolService
     }
 
     /// <summary>
-    /// Runs the env's npm and returns its (trimmed) stdout, or null on failure.
+    /// Runs a Node entry's npm and returns its (trimmed) stdout, or null on failure.
     /// </summary>
-    internal static string? RunNpmCapture(string envDir, string[] args)
+    internal static string? RunNpmCapture(NodeEnvLayout node, string[] args)
     {
-        int exit = RunNpm(envDir, args, capture: true, out string? stdout);
+        int exit = RunNpm(node, node.EnvDir, args, capture: true, out string? stdout);
         string? result = stdout?.Trim();
         return exit == 0 && !string.IsNullOrWhiteSpace(result) ? result : null;
     }
 
     /// <summary>
-    /// Runs the env's npm with --prefix <envDir> (the env's node install IS the npm
-    /// prefix; the flag is required on Windows to make npm create the bin shims).
+    /// Runs the npm of a Node entry with --prefix <paramref name="prefixDir"/>, so
+    /// 'npm install -g' lands in that folder (a tool's store entry) together with
+    /// its bin shims.
     /// </summary>
-    private static int RunNpm(string envDir, string[] args, bool capture, out string? stdout)
+    private static int RunNpm(NodeEnvLayout node, string prefixDir, string[] args, bool capture, out string? stdout)
     {
         stdout = null;
-        NodeEnvLayout layout = NodeEnvLayout.Create(envDir);
-        string npm = layout.NpmEntry;
+        string npm = node.NpmEntry;
         if (!File.Exists(npm))
         {
-            AnsiConsole.MarkupLine($"[red]npm not found in the env at {Markup.Escape(npm)}. Run [green]nem install[/] first.[/]");
+            AnsiConsole.MarkupLine($"[red]npm not found at {Markup.Escape(npm)}. Run [green]nem install[/] first.[/]");
             return 1;
         }
 
         var psi = new ProcessStartInfo(npm)
         {
             UseShellExecute = false,
-            WorkingDirectory = envDir,
+            // The prefix may not exist yet; npm creates it.
+            WorkingDirectory = node.EnvDir,
         };
         if (capture)
         {
@@ -414,12 +436,12 @@ public static class ToolService
             psi.StandardOutputEncoding = Encoding.UTF8;
         }
         psi.ArgumentList.Add("--prefix");
-        psi.ArgumentList.Add(envDir);
+        psi.ArgumentList.Add(prefixDir);
         foreach (string arg in args)
             psi.ArgumentList.Add(arg);
 
-        // Make sure the env's node is first on PATH for anything npm spawns.
-        psi.Environment["PATH"] = layout.BuildPathVariable(Environment.GetEnvironmentVariable("PATH"));
+        // Make sure the entry's node is first on PATH for anything npm spawns.
+        psi.Environment["PATH"] = node.BuildPathVariable(Environment.GetEnvironmentVariable("PATH"));
         psi.Environment["npm_config_update_notifier"] = "false";
 
         using var process = Process.Start(psi);
@@ -473,6 +495,22 @@ public static class ToolService
         AnsiConsole.MarkupLine($"[red]No {Markup.Escape(IOPathManager.ConfigFileNamesText)} found in the current directory or any parent.[/]");
         AnsiConsole.MarkupLine($"Run [green]nem init <nodeVersion>[/] in your project root first.");
         return 1;
+    }
+
+    /// <summary>The env's composition in the default store; prints why when there is none.</summary>
+    internal static bool TryCompose(NemConfig config, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out EnvComposition? composition)
+    {
+        switch (EnvComposition.Compose(config, EnvStore.Default))
+        {
+            case EnvComposition.Result.Ok ok:
+                composition = ok.Env;
+                return true;
+            case EnvComposition.Result.Invalid invalid:
+                AnsiConsole.MarkupLine($"[red]{Markup.Escape(invalid.Reason)}.[/]");
+                break;
+        }
+        composition = null;
+        return false;
     }
 
     private static bool TryGetEnvContext(out NemConfig? config, out IOPathManager.IOPathManagerEnv? env)

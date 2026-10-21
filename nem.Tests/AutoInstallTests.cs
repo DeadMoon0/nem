@@ -6,8 +6,9 @@ using nem.Services;
 namespace nem.Tests;
 
 /// <summary>
-/// When a tool start has to install the env first: whenever the env was not
-/// installed for exactly the Node version and tools nem.jsonc declares now.
+/// When a tool start has to install first: whenever the store lacks the Node
+/// version or a tool version the env's nem.jsonc declares. The project itself
+/// carries nothing but that file.
 /// </summary>
 public class AutoInstallTests
 {
@@ -17,66 +18,142 @@ public class AutoInstallTests
         Tools = tools.Select(t => t.Split('=')).Select(t => new NemToolConfig { ToolName = t[0], ToolVersion = t[1] }).ToList(),
     };
 
-    [Fact]
-    public void An_env_installed_for_the_declared_config_needs_no_install()
-    {
-        var config = Config("22.23.3", "@angular/cli=22.2.3");
+    static EnvStore NewStore(TempDir tmp) => new(Path.Combine(tmp.FullName, "store"), Path.Combine(tmp.FullName, "globals"));
 
-        Assert.True(InstallStamp.Matches(InstallStamp.For(config), config));
+    static EnvComposition Compose(NemConfig config, EnvStore store) =>
+        Assert.IsType<EnvComposition.Result.Ok>(EnvComposition.Compose(config, store)).Env;
+
+    [Fact]
+    public void An_env_whose_node_and_tools_are_in_the_store_needs_no_install()
+    {
+        using var tmp = new TempDir();
+        EnvStore store = NewStore(tmp);
+        StoreFixture.CompleteEntry(store.NodeEntryDir("22.23.3"));
+        StoreFixture.CompleteEntry(store.ToolEntryDir("@angular/cli", "22.2.3", 22));
+
+        EnvComposition env = Compose(Config("22.23.3", "@angular/cli=22.2.3"), store);
+
+        Assert.True(env.IsInstalled);
+        Assert.Empty(env.Missing);
     }
 
     [Fact]
-    public void An_env_that_was_never_installed_needs_an_install()
+    public void A_node_version_the_store_lacks_needs_an_install()
     {
-        Assert.False(InstallStamp.Matches(null, Config("22.23.3")));
+        using var tmp = new TempDir();
+        EnvStore store = NewStore(tmp);
+        StoreFixture.CompleteEntry(store.NodeEntryDir("20.20.2"));
+
+        EnvComposition env = Compose(Config("22.23.3"), store);
+
+        Assert.Equal(["Node 22.23.3"], env.Missing);
     }
 
     [Fact]
-    public void A_changed_node_version_needs_an_install()
+    public void A_tool_version_the_store_lacks_needs_an_install()
     {
-        string installed = InstallStamp.For(Config("20.20.2", "@angular/cli=17.3.8"));
+        using var tmp = new TempDir();
+        EnvStore store = NewStore(tmp);
+        StoreFixture.CompleteEntry(store.NodeEntryDir("22.23.3"));
+        StoreFixture.CompleteEntry(store.ToolEntryDir("@angular/cli", "21.0.0", 22));
 
-        Assert.False(InstallStamp.Matches(installed, Config("22.23.3", "@angular/cli=17.3.8")));
+        EnvComposition env = Compose(Config("22.23.3", "@angular/cli=22.2.3"), store);
+
+        Assert.Equal(["@angular/cli@22.2.3"], env.Missing);
     }
 
     [Fact]
-    public void A_changed_tool_version_needs_an_install()
+    public void An_install_that_never_finished_counts_as_missing()
     {
-        string installed = InstallStamp.For(Config("22.23.3", "@angular/cli=21.0.0"));
+        using var tmp = new TempDir();
+        EnvStore store = NewStore(tmp);
+        StoreFixture.CompleteEntry(store.NodeEntryDir("22.23.3"));
+        Directory.CreateDirectory(store.ToolEntryDir("typescript", "5.9.3", 22));
 
-        Assert.False(InstallStamp.Matches(installed, Config("22.23.3", "@angular/cli=22.2.3")));
+        EnvComposition env = Compose(Config("22.23.3", "typescript=5.9.3"), store);
+
+        Assert.Equal(["typescript@5.9.3"], env.Missing);
     }
 
     [Fact]
-    public void An_added_tool_needs_an_install()
+    public void Envs_on_the_same_node_major_share_a_tool()
     {
-        string installed = InstallStamp.For(Config("22.23.3", "@angular/cli=22.2.3"));
+        using var tmp = new TempDir();
+        EnvStore store = NewStore(tmp);
 
-        Assert.False(InstallStamp.Matches(installed, Config("22.23.3", "@angular/cli=22.2.3", "typescript=5.9.3")));
+        string onOlderPatch = Assert.Single(Compose(Config("20.18.0", "@angular/cli=17.3.8"), store).Tools).Dir;
+        string onNewerPatch = Assert.Single(Compose(Config("20.20.2", "@angular/cli=17.3.8"), store).Tools).Dir;
+
+        Assert.Equal(onOlderPatch, onNewerPatch);
     }
 
     [Fact]
-    public void A_removed_tool_needs_an_install()
+    public void A_tool_is_kept_apart_per_node_major_because_native_addons_are_built_for_one()
     {
-        string installed = InstallStamp.For(Config("22.23.3", "@angular/cli=22.2.3", "typescript=5.9.3"));
+        using var tmp = new TempDir();
+        EnvStore store = NewStore(tmp);
 
-        Assert.False(InstallStamp.Matches(installed, Config("22.23.3", "@angular/cli=22.2.3")));
+        string onNode20 = Assert.Single(Compose(Config("20.20.2", "esbuild=0.25.0"), store).Tools).Dir;
+        string onNode22 = Assert.Single(Compose(Config("22.23.3", "esbuild=0.25.0"), store).Tools).Dir;
+
+        Assert.NotEqual(onNode20, onNode22);
     }
 
     [Fact]
-    public void Reordering_the_tools_in_the_config_needs_no_install()
+    public void A_partial_node_version_takes_the_newest_matching_one_in_the_store()
     {
-        string installed = InstallStamp.For(Config("22.23.3", "@angular/cli=22.2.3", "typescript=5.9.3"));
+        using var tmp = new TempDir();
+        EnvStore store = NewStore(tmp);
+        StoreFixture.CompleteEntry(store.NodeEntryDir("22.9.0"));
+        StoreFixture.CompleteEntry(store.NodeEntryDir("22.23.3"));
+        StoreFixture.CompleteEntry(store.NodeEntryDir("24.1.0"));
 
-        Assert.True(InstallStamp.Matches(installed, Config("22.23.3", "typescript=5.9.3", "@angular/cli=22.2.3")));
+        EnvComposition env = Compose(Config("22"), store);
+
+        Assert.Equal("22.23.3", env.NodeVersion);
+        Assert.True(env.IsInstalled);
     }
 
     [Fact]
-    public void A_stamp_with_windows_line_endings_still_counts()
+    public void A_partial_node_version_the_store_has_nothing_for_needs_an_install()
     {
-        var config = Config("22.23.3", "typescript=5.9.3");
+        using var tmp = new TempDir();
+        EnvStore store = NewStore(tmp);
 
-        Assert.True(InstallStamp.Matches(InstallStamp.For(config).Replace("\n", "\r\n"), config));
+        EnvComposition env = Compose(Config("22"), store);
+
+        Assert.Equal(["Node 22"], env.Missing);
+    }
+
+    [Fact]
+    public void A_tool_declared_as_a_range_is_refused()
+    {
+        using var tmp = new TempDir();
+
+        var result = EnvComposition.Compose(Config("22.23.3", "typescript=^5.9.0"), NewStore(tmp));
+
+        Assert.Contains("exact version", Assert.IsType<EnvComposition.Result.Invalid>(result).Reason);
+    }
+
+    [Fact]
+    public void A_config_without_a_node_version_is_refused()
+    {
+        using var tmp = new TempDir();
+
+        Assert.IsType<EnvComposition.Result.Invalid>(EnvComposition.Compose(new NemConfig(), NewStore(tmp)));
+    }
+
+    [Fact]
+    public void Declared_tools_come_before_node_on_the_path()
+    {
+        // A declared npm or corepack has to win over the one Node ships.
+        using var tmp = new TempDir();
+        EnvStore store = NewStore(tmp);
+
+        EnvComposition env = Compose(Config("22.23.3", "npm=11.0.0"), store);
+
+        Assert.StartsWith(Assert.Single(env.Tools).Dir, env.BinDirs[0]);
+        Assert.StartsWith(env.NodeDir, env.BinDirs[^1]);
     }
 
     [Theory]
@@ -101,26 +178,12 @@ public class AutoInstallTests
     }
 
     [Fact]
-    public void Inspect_reads_the_env_on_disk()
-    {
-        using var tmp = new TempDir();
-        File.WriteAllText(Path.Combine(tmp.FullName, "nem.jsonc"), """{ "NodeVersion": "22.23.3", "Tools": [] }""");
-        Assert.True(IOPathManager.TryGetEnv(tmp.FullName, out IOPathManager.IOPathManagerEnv? env));
-
-        Assert.Equal(AutoInstaller.EnvState.Outdated, AutoInstaller.Inspect(env!));
-
-        Directory.CreateDirectory(env!.EnvDirPath);
-        File.WriteAllText(Path.Combine(env.EnvDirPath, InstallStamp.FileName), InstallStamp.For(Config("22.23.3")));
-        Assert.Equal(AutoInstaller.EnvState.Current, AutoInstaller.Inspect(env));
-    }
-
-    [Fact]
     public void Inspect_reports_a_config_it_cannot_read()
     {
         using var tmp = new TempDir();
         File.WriteAllText(Path.Combine(tmp.FullName, "nem.jsonc"), "{ not json");
         Assert.True(IOPathManager.TryGetEnv(tmp.FullName, out IOPathManager.IOPathManagerEnv? env));
 
-        Assert.Equal(AutoInstaller.EnvState.Unreadable, AutoInstaller.Inspect(env!));
+        Assert.IsType<AutoInstaller.EnvState.Invalid>(AutoInstaller.Inspect(env!, NewStore(tmp)));
     }
 }

@@ -30,3 +30,14 @@ public sealed class TempDir : IDisposable
         }
     }
 }
+
+/// <summary>Store entries in the shape a finished install leaves them.</summary>
+public static class StoreFixture
+{
+    /// <summary>Creates the entry folder with its completion marker.</summary>
+    public static void CompleteEntry(string entryDir)
+    {
+        Directory.CreateDirectory(entryDir);
+        File.WriteAllText(Path.Combine(entryDir, nem.Services.EnvStore.CompleteMarker), "");
+    }
+}

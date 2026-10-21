@@ -40,17 +40,16 @@ internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
             return 1;
 
         NemConfig config = LoadConfig(local);
-        string envDir = local.EnsureEnvDirPath();
         bool interactive = AnsiConsole.Profile.Capabilities.Interactive;
 
         string what = settings.What?.Trim() ?? "";
         if (what.Length == 0)
-            return await UpdateEverythingPromptedAsync(config, local, envDir, interactive);
+            return await UpdateEverythingPromptedAsync(config, local, interactive);
         if (what.Equals("all", StringComparison.OrdinalIgnoreCase))
-            return await UpdateEverythingAsync(config, local, envDir);
+            return await UpdateEverythingAsync(config, local);
         if (NodeVersionSpec.IsNodeVersionSpec(what))
-            return await UpdateNodeAsync(config, local, envDir, what, settings.Tools, interactive);
-        return await UpdateToolAsync(config, local, envDir, what);
+            return await UpdateNodeAsync(config, local, what, settings.Tools, interactive);
+        return await UpdateToolAsync(config, local, what);
     }
 
     /// <summary>
@@ -59,9 +58,9 @@ internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
     /// the report is printed with the exact commands to apply the updates.
     /// </summary>
     static async Task<int> UpdateEverythingPromptedAsync(
-        NemConfig config, IOPathManager.IOPathManagerEnv local, string envDir, bool interactive)
+        NemConfig config, IOPathManager.IOPathManagerEnv local, bool interactive)
     {
-        UpdatePlan plan = await UpdatePlanner.Create().CreateAsync(config, envDir);
+        UpdatePlan plan = await UpdatePlanner.Create().CreateAsync(config);
         RenderPlan(plan);
 
         if (!interactive)
@@ -93,7 +92,7 @@ internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
 
         // Tool "latest" versions depend on the Node version that will be in use.
         UpdatePlan toolPlan = nodeUpdated
-            ? await UpdatePlanner.Create().CreateAsync(config, envDir, nodeReference: newNode)
+            ? await UpdatePlanner.Create().CreateAsync(config, nodeReference: newNode)
             : plan;
 
         bool toolsUpdated = false;
@@ -122,14 +121,14 @@ internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
 
         SaveConfig(local, config);
         AnsiConsole.MarkupLine("[gray]Installing...[/]");
-        return await EnvironmentInstaller.InstallAsync(config, envDir, clean: false, audit: true);
+        return await EnvironmentInstaller.InstallAsync(config, local, reinstall: false, audit: true);
     }
 
     /// <summary>
     /// 'nem update all': set Node to the newest stable release and every tool to
     /// the newest version that release supports, then install.
     /// </summary>
-    static async Task<int> UpdateEverythingAsync(NemConfig config, IOPathManager.IOPathManagerEnv local, string envDir)
+    static async Task<int> UpdateEverythingAsync(NemConfig config, IOPathManager.IOPathManagerEnv local)
     {
         string version;
         try
@@ -156,7 +155,7 @@ internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
 
         SaveConfig(local, config);
         AnsiConsole.MarkupLine("[gray]Installing...[/]");
-        return await EnvironmentInstaller.InstallAsync(config, envDir, clean: false, audit: true);
+        return await EnvironmentInstaller.InstallAsync(config, local, reinstall: false, audit: true);
     }
 
     /// <summary>
@@ -164,7 +163,7 @@ internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
     /// only touched with --tools (or an interactive confirmation).
     /// </summary>
     static async Task<int> UpdateNodeAsync(
-        NemConfig config, IOPathManager.IOPathManagerEnv local, string envDir,
+        NemConfig config, IOPathManager.IOPathManagerEnv local,
         string spec, bool toolsFlag, bool interactive)
     {
         string version;
@@ -203,7 +202,7 @@ internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
 
         SaveConfig(local, config);
         AnsiConsole.MarkupLine("[gray]Installing...[/]");
-        return await EnvironmentInstaller.InstallAsync(config, envDir, clean: false, audit: true);
+        return await EnvironmentInstaller.InstallAsync(config, local, reinstall: false, audit: true);
     }
 
     /// <summary>
@@ -211,7 +210,7 @@ internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
     /// given version, or to the newest version supported by the declared Node.
     /// </summary>
     static async Task<int> UpdateToolAsync(
-        NemConfig config, IOPathManager.IOPathManagerEnv local, string envDir, string spec)
+        NemConfig config, IOPathManager.IOPathManagerEnv local, string spec)
     {
         if (!ToolService.TryParsePackageSpec(spec, out string? name, out string? version) ||
             name == null || !ToolService.IsValidPackageName(name))
@@ -241,7 +240,7 @@ internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
 
         SaveConfig(local, config);
         AnsiConsole.MarkupLine("[gray]Installing...[/]");
-        return await EnvironmentInstaller.InstallAsync(config, envDir, clean: false, audit: true);
+        return await EnvironmentInstaller.InstallAsync(config, local, reinstall: false, audit: true);
     }
 
     /// <summary>

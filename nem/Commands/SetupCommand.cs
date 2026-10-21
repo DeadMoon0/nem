@@ -20,7 +20,7 @@ internal class SetupCommandSettings : CommandSettings
 {
     [CommandOption("-u|--uninstall")]
     [DefaultValue(false)]
-    [Description("Undoes the setup: takes the nem proxy directory back out of your PATH and deletes the proxies. The env folders and caches are left alone.")]
+    [Description("Undoes the setup: takes the nem proxy directory back out of your PATH and deletes the proxies. The store is left alone.")]
     public required bool Uninstall { get; init; }
 }
 
@@ -119,7 +119,7 @@ internal class SetupCommand : AsyncCommand<SetupCommandSettings>
 
         DeleteProxyDirectory(proxyPath);
         ReportPathChanged(uninstall: true);
-        AnsiConsole.MarkupLine($"[gray]Kept the caches and env folders. Remove {Markup.Escape(IOPathManager.System.DirPath)} by hand for a full clean.[/]");
+        AnsiConsole.MarkupLine($"[gray]Kept the store. Remove {Markup.Escape(IOPathManager.System.DirPath)} by hand for a full clean.[/]");
         return 0;
     }
 
@@ -174,7 +174,7 @@ internal class SetupCommand : AsyncCommand<SetupCommandSettings>
 
     /// <summary>
     /// Unix: takes the marker-guarded lines back out of the shell rc files and
-    /// deletes the proxies. The caches and env folders are left alone.
+    /// deletes the proxies. The store is left alone.
     /// </summary>
     static int RemoveUnixShellPath()
     {
@@ -189,7 +189,7 @@ internal class SetupCommand : AsyncCommand<SetupCommandSettings>
             AnsiConsole.MarkupLine("[green]No rc file carried the nem PATH line.[/]");
 
         DeleteProxyDirectory(proxyDir);
-        AnsiConsole.MarkupLine($"[gray]Kept the caches and env folders. Remove {Markup.Escape(IOPathManager.System.DirPath)} by hand for a full clean.[/]");
+        AnsiConsole.MarkupLine($"[gray]Kept the store. Remove {Markup.Escape(IOPathManager.System.DirPath)} by hand for a full clean.[/]");
         AnsiConsole.MarkupLine("[yellow]Please restart your terminal for the changes to take effect.[/]");
         return 0;
     }

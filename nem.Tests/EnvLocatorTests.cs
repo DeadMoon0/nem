@@ -24,7 +24,6 @@ public class EnvLocatorTests
 
         Assert.True(EnvLocator.TryLocate(start, out IOPathManager.IOPathManagerEnv? env));
         Assert.Equal(tmp.FullName, env!.DirPath);
-        Assert.Equal(Path.Combine(tmp.FullName, ".nenv"), env.EnvDirPath);
     }
 
     [Fact]

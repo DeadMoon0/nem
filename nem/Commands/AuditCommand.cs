@@ -1,5 +1,6 @@
 using nem.Common;
 using nem.Services;
+using Spectre.Console;
 using Spectre.Console.Cli;
 using System.ComponentModel;
 using System.IO;
@@ -23,7 +24,15 @@ internal class AuditCommand : Command<AuditCommandSettings>
         if (!EnvLocator.TryLocate(path, out IOPathManager.IOPathManagerEnv? local))
             return 1;
 
-        AuditService.ReportDetails(local.EnvDirPath);
+        if (!ToolService.TryCompose(NemConfigFile.Read(local.ConfigFilePath), out EnvComposition? env))
+            return 1;
+        if (!env.IsInstalled)
+        {
+            AnsiConsole.MarkupLine($"[yellow]Not installed yet: {Markup.Escape(string.Join(", ", env.Missing))}. Run [green]nem install[/] first.[/]");
+            return 1;
+        }
+
+        AuditService.ReportDetails(env);
         return 0;
     }
 }

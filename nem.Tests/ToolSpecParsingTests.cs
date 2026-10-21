@@ -68,25 +68,6 @@ public class ToolSpecParsingTests
     }
 
     [Fact]
-    public void GetInstalledToolVersion_Reads_The_Version_From_Disk()
-    {
-        using var tmp = new TempDir();
-        string envDir = Path.Combine(tmp.FullName, ".nenv");
-        string packageDir = Path.Combine(NodeEnvLayout.Create(envDir).ModulesRoot, "typescript");
-        Directory.CreateDirectory(packageDir);
-
-        Assert.Null(ToolService.GetInstalledToolVersion(envDir, "typescript"));
-
-        File.WriteAllText(Path.Combine(packageDir, "package.json"), """{"name":"typescript"}""");
-        Assert.Null(ToolService.GetInstalledToolVersion(envDir, "typescript"));
-
-        File.WriteAllText(
-            Path.Combine(packageDir, "package.json"),
-            """{"name":"typescript","version":"5.6.3"}""");
-        Assert.Equal("5.6.3", ToolService.GetInstalledToolVersion(envDir, "typescript"));
-    }
-
-    [Fact]
     public void ReadToolBins_Uses_The_Bin_Field_From_The_Package()
     {
         using var tmp = new TempDir();

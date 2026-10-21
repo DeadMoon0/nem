@@ -75,8 +75,8 @@ internal class InitCommand : AsyncCommand<InitCommandSettings>
         AnsiConsole.WriteLine("");
         AnsiConsole.MarkupLine("[Green1]Success[/] [Gray50]The env was initialized.[/]");
         AnsiConsole.WriteLine("");
-        AnsiConsole.MarkupLine("[Gray50]To install the Node version use:[/] nem install");
         AnsiConsole.MarkupLine("[Gray50]To manage tools use:[/] nem tool");
+        AnsiConsole.MarkupLine("[Gray50]The first tool you run installs the env, or run:[/] nem install");
         return 0;
     }
 

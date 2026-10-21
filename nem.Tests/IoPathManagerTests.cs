@@ -10,14 +10,12 @@ namespace nem.Tests;
 public class IoPathManagerTests
 {
     [Fact]
-    public void Local_Puts_Config_And_Env_In_The_Project_Directory()
+    public void Local_Puts_The_Config_In_The_Project_Directory()
     {
         var local = IOPathManager.Local("/some/project");
 
         Assert.Equal("nem.jsonc", local.ConfigFileName);
         Assert.Equal(Path.Combine("/some/project", "nem.jsonc"), local.ConfigFilePath);
-        Assert.Equal(".nenv", local.EnvDirName);
-        Assert.Equal(Path.Combine("/some/project", ".nenv"), local.EnvDirPath);
     }
 
     [Fact]
@@ -71,9 +69,20 @@ public class IoPathManagerTests
         var system = new IOPathManager.IOPathManagerSystem(configFolder);
 
         Assert.Equal(Path.Combine(configFolder, "nem"), system.DirPath);
-        Assert.Equal(Path.Combine(configFolder, "nem", "download"), system.DownloadCacheDirPath);
-        Assert.Equal(Path.Combine(configFolder, "nem", "extract"), system.ExtractCacheDirPath);
+        Assert.Equal(Path.Combine(configFolder, "nem", "store"), system.StoreDirPath);
+        Assert.Equal(Path.Combine(configFolder, "nem", "globals"), system.GlobalsDirPath);
         Assert.Equal(Path.Combine(configFolder, "nem", "proxy"), system.ProxyDirPath);
+    }
+
+    [Fact]
+    public void Nem_home_moves_the_whole_nem_folder()
+    {
+        string home = Path.Combine(Path.GetTempPath(), "nem-test-home");
+        var system = IOPathManager.IOPathManagerSystem.AtNemDir(home);
+
+        Assert.Equal(Path.Combine(home, "store"), system.StoreDirPath);
+        Assert.Equal(Path.Combine(home, "proxy"), system.ProxyDirPath);
+        Assert.Throws<InvalidOperationException>(() => IOPathManager.IOPathManagerSystem.AtNemDir("relative/nem"));
     }
 
     [Theory]
@@ -109,7 +118,6 @@ public class IoPathManagerTests
         Assert.True(IOPathManager.TryFindEnv(start, out IOPathManager.IOPathManagerEnv? env));
         Assert.Equal(tmp.FullName, env!.DirPath);
         Assert.Equal(Path.Combine(tmp.FullName, configFileName), env.ConfigFilePath);
-        Assert.Equal(Path.Combine(tmp.FullName, ".nenv"), env.EnvDirPath);
     }
 
     [Fact]
@@ -172,21 +180,5 @@ public class IoPathManagerTests
         string root = Path.GetPathRoot(Path.GetTempPath())!;
 
         IOPathManager.TryFindEnv(root, out _);
-    }
-
-    [Fact]
-    public void EnsureEnvDirPath_Creates_The_Env_Directory()
-    {
-        using var tmp = new TempDir();
-        var local = IOPathManager.Local(tmp.FullName);
-
-        Assert.False(Directory.Exists(local.EnvDirPath));
-
-        Assert.Equal(local.EnvDirPath, local.EnsureEnvDirPath());
-        Assert.True(Directory.Exists(local.EnvDirPath));
-
-        // Calling it again resolves to the same path.
-        Assert.Equal(local.EnvDirPath, local.EnsureEnvDirPath());
-        Assert.True(File.Exists(Path.Combine(local.EnvDirPath, ".gitignore")));
     }
 }

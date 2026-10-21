@@ -98,29 +98,6 @@ public class NodeVersionLogicTests
         => Assert.Null(NodeDownloadingService.ParseSha256("abc  " + NodeFile, NodeFile));
 
     [Fact]
-    public void GetInstalledNodeVersion_Is_Null_Without_A_Node_Binary()
-    {
-        using var tmp = new TempDir();
-        string envDir = Path.Combine(tmp.FullName, ".nenv");
-        Directory.CreateDirectory(envDir);
-
-        Assert.Null(NodeDownloadingService.GetInstalledNodeVersion(envDir));
-    }
-
-    [Fact]
-    public void GetInstalledNodeVersion_Is_Null_When_The_Binary_Cannot_Run()
-    {
-        using var tmp = new TempDir();
-        string binDir = Path.Combine(tmp.FullName, ".nenv", "bin");
-        Directory.CreateDirectory(binDir);
-        File.WriteAllText(
-            Path.Combine(binDir, OperatingSystem.IsWindows() ? "node.exe" : "node"),
-            "not a node binary");
-
-        Assert.Null(NodeDownloadingService.GetInstalledNodeVersion(Path.Combine(tmp.FullName, ".nenv")));
-    }
-
-    [Fact]
     public void GetPlatformPackage_Maps_Platform_Facts_To_The_Dist_Package()
     {
         Assert.Equal(("node-v26.8.1-linux-x64", "tar.xz"),

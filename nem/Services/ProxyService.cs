@@ -68,35 +68,37 @@ public static class ProxyService
     }
 
     /// <summary>
-    /// Finds the nem env that contains the current directory, installs it when it
-    /// no longer matches its config, and runs the tool in its context.
+    /// Finds the nem env that contains the current directory, installs what the
+    /// store lacks of it, and runs the tool in its context.
     /// Returns the tool's exit code.
     /// </summary>
-    public static int CallToolInEnvContext(string tool, IReadOnlyList<string> args)
+    public static int CallToolInEnvContext(string tool, IReadOnlyList<string> args) =>
+        CallToolInEnvContext(tool, args, Directory.GetCurrentDirectory(), EnvStore.Default);
+
+    internal static int CallToolInEnvContext(string tool, IReadOnlyList<string> args, string cwd, EnvStore store)
     {
-        string cwd = Directory.GetCurrentDirectory();
-        if (!AutoInstaller.TryPrepare(cwd, tool, out int installExit))
+        if (!AutoInstaller.TryPrepare(cwd, tool, store, out int installExit))
             return installExit;
 
         // The same decision 'nem which' explains, so what runs is what it reports.
-        return ExecuteTool(ToolResolver.Resolve(cwd, tool), args);
+        return ExecuteTool(ToolResolver.Resolve(cwd, tool, store), args);
     }
 
     static int ExecuteTool(ToolResolver.ToolResolution resolution, IEnumerable<string> args)
     {
         string toolName = resolution.ToolName;
-        string? envDir = resolution.EnvDir;
+        EnvComposition? env = resolution.Env;
 
         if (resolution.ExecutablePath == null)
         {
-            if (envDir == null)
+            if (env == null)
             {
                 AnsiConsole.MarkupLine($"[red]Error: Tool '{toolName}' not found on PATH.[/]");
                 return 1;
             }
 
             AnsiConsole.MarkupLine($"[red]Error: Tool '{toolName}' is not available in the env.[/]");
-            AnsiConsole.MarkupLine($"Declare it with [green]nem tool add {toolName}[/] and run [green]nem install[/], or install it into the env directly.");
+            AnsiConsole.MarkupLine($"Declare it with [green]nem tool add {toolName}[/], or install it into the env directly.");
             return 1;
         }
 
@@ -110,15 +112,17 @@ public static class ProxyService
         foreach (var arg in args)
             psi.ArgumentList.Add(arg);
 
-        if (envDir != null)
+        if (env != null)
         {
-            NodeEnvLayout layout = NodeEnvLayout.Create(envDir);
+            // The env's commands (tools, then Node) ahead of everything else.
+            psi.Environment["PATH"] = env.BuildPathVariable(Environment.GetEnvironmentVariable("PATH"));
 
-            // Prepend the env (and its tool bin dir) to PATH for the child process.
-            psi.Environment["PATH"] = layout.BuildPathVariable(Environment.GetEnvironmentVariable("PATH"));
+            // Let node require() find the env's tool packages.
+            psi.Environment["NODE_PATH"] = env.NodePath;
 
-            // Let node require() find globally installed env packages.
-            psi.Environment["NODE_PATH"] = layout.ModulesRoot;
+            // 'npm install -g' must not write into a store entry, which other envs
+            // share; it goes to the per-Node-major globals folder instead.
+            psi.Environment["npm_config_prefix"] = env.GlobalsDir;
         }
 
         try
@@ -132,33 +136,6 @@ public static class ProxyService
             AnsiConsole.MarkupLine($"[red]Error: Could not start '{resolvedToolPath}': {Markup.Escape(ex.Message)}[/]");
             return 1;
         }
-    }
-
-    /// <summary>
-    /// Resolves a tool inside a nem env directory, checking the common binary locations and extensions.
-    /// </summary>
-    public static string? ResolveToolInEnv(string envDir, string toolName)
-    {
-        NodeEnvLayout layout = NodeEnvLayout.Create(envDir);
-        string[] roots = layout.IsWindows
-            ? [layout.EnvDir, Path.Combine(layout.EnvDir, "bin")]
-            : [layout.BinDir, layout.EnvDir];
-
-        string[] extensions = layout.IsWindows
-            ? [".exe", ".cmd", ".bat", ""]
-            : [""];
-
-        foreach (string root in roots)
-        {
-            foreach (string extension in extensions)
-            {
-                string candidate = Path.Combine(root, toolName + extension);
-                if (File.Exists(candidate))
-                    return candidate;
-            }
-        }
-
-        return null;
     }
 
     /// <summary>

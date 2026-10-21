@@ -60,37 +60,32 @@ public class ProxyServiceTests
     }
 
     [Fact]
-    public void ResolveToolInEnv_Finds_Binaries_In_The_Env()
+    public void FindCommand_Takes_The_First_Folder_That_Has_The_Command()
     {
         using var tmp = new TempDir();
-        string envDir = tmp.FullName;
-        string binDir = Path.Combine(envDir, "bin");
-        Directory.CreateDirectory(binDir);
+        string first = Directory.CreateDirectory(Path.Combine(tmp.FullName, "tool")).FullName;
+        string second = Directory.CreateDirectory(Path.Combine(tmp.FullName, "node")).FullName;
+        string name = OperatingSystem.IsWindows() ? "npm.cmd" : "npm";
+        File.WriteAllText(Path.Combine(second, name), "");
 
-        if (OperatingSystem.IsWindows())
-        {
-            string exe = Path.Combine(binDir, "tsc.exe");
-            File.WriteAllText(exe, "binary");
-            Assert.Equal(exe, ProxyService.ResolveToolInEnv(envDir, "tsc"));
+        Assert.Equal(Path.Combine(second, name), EnvComposition.FindCommand([first, second], "npm"));
 
-            File.Delete(exe);
-            string cmd = Path.Combine(envDir, "tsc.cmd");
-            File.WriteAllText(cmd, "cmd");
-            Assert.Equal(cmd, ProxyService.ResolveToolInEnv(envDir, "tsc"));
-        }
-        else
-        {
-            string bin = Path.Combine(binDir, "tsc");
-            File.WriteAllText(bin, "binary");
-            Assert.Equal(bin, ProxyService.ResolveToolInEnv(envDir, "tsc"));
+        File.WriteAllText(Path.Combine(first, name), "");
+        Assert.Equal(Path.Combine(first, name), EnvComposition.FindCommand([first, second], "npm"));
+        Assert.Null(EnvComposition.FindCommand([first, second], "missing-tool"));
+    }
 
-            File.Delete(bin);
-            string root = Path.Combine(envDir, "tsc");
-            File.WriteAllText(root, "binary");
-            Assert.Equal(root, ProxyService.ResolveToolInEnv(envDir, "tsc"));
-        }
+    [Fact]
+    public void FindCommand_Prefers_An_Exe_Over_A_Cmd_Shim_On_Windows()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
 
-        Assert.Null(ProxyService.ResolveToolInEnv(envDir, "missing-tool"));
+        using var tmp = new TempDir();
+        File.WriteAllText(Path.Combine(tmp.FullName, "node.cmd"), "");
+        File.WriteAllText(Path.Combine(tmp.FullName, "node.exe"), "");
+
+        Assert.Equal(Path.Combine(tmp.FullName, "node.exe"), EnvComposition.FindCommand([tmp.FullName], "node"));
     }
 
     [Fact]
@@ -113,36 +108,28 @@ public class ProxyServiceTests
     [Fact]
     public void CallToolInEnvContext_Forwards_The_Tool_Exit_Code()
     {
-        string originalCwd = Directory.GetCurrentDirectory();
         using var tmp = new TempDir();
-        string envDir = Path.Combine(tmp.FullName, ".nenv");
-        string binDir = Path.Combine(envDir, "bin");
-        Directory.CreateDirectory(binDir);
-        File.WriteAllText(Path.Combine(tmp.FullName, "nem.json"), "{}");
-        // Installed for exactly this config, so the call goes straight to the tool.
-        File.WriteAllText(Path.Combine(envDir, InstallStamp.FileName), InstallStamp.For(new nem.Common.Models.NemConfig()));
+        var store = new EnvStore(Path.Combine(tmp.FullName, "store"), Path.Combine(tmp.FullName, "globals"));
+        string project = Directory.CreateDirectory(Path.Combine(tmp.FullName, "project")).FullName;
+        File.WriteAllText(Path.Combine(project, "nem.jsonc"), """{ "NodeVersion": "22.0.0", "Tools": [ { "ToolName": "typescript", "ToolVersion": "5.0.0" } ] }""");
 
-        string toolPath;
+        // Both entries complete, so the call goes straight to the tool.
+        StoreFixture.CompleteEntry(store.NodeEntryDir("22.0.0"));
+        string toolEntry = store.ToolEntryDir("typescript", "5.0.0", 22);
+        StoreFixture.CompleteEntry(toolEntry);
+        string binDir = NodeEnvLayout.Create(toolEntry).BinDir;
+        Directory.CreateDirectory(binDir);
         if (OperatingSystem.IsWindows())
         {
-            toolPath = Path.Combine(binDir, "tsc.bat");
-            File.WriteAllText(toolPath, "@echo off\r\nexit /b 42\r\n");
+            File.WriteAllText(Path.Combine(binDir, "tsc.bat"), "@echo off\r\nexit /b 42\r\n");
         }
         else
         {
-            toolPath = Path.Combine(binDir, "tsc");
+            string toolPath = Path.Combine(binDir, "tsc");
             File.WriteAllText(toolPath, "#!/bin/sh\nexit 42\n");
             File.SetUnixFileMode(toolPath, UnixFileMode.UserExecute | UnixFileMode.UserRead | UnixFileMode.UserWrite);
         }
 
-        Directory.SetCurrentDirectory(tmp.FullName);
-        try
-        {
-            Assert.Equal(42, ProxyService.CallToolInEnvContext("tsc", []));
-        }
-        finally
-        {
-            Directory.SetCurrentDirectory(originalCwd);
-        }
+        Assert.Equal(42, ProxyService.CallToolInEnvContext("tsc", [], project, store));
     }
 }

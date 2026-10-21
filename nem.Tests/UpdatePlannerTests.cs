@@ -20,7 +20,7 @@ public class UpdatePlannerTests
             new FakeNodeSource { Latest = "26.8.1", Installed = "22.23.2" },
             new FakeToolSource());
 
-        UpdatePlan plan = await planner.CreateAsync(Config("22.23.2", []), "/env");
+        UpdatePlan plan = await planner.CreateAsync(Config("22.23.2", []));
 
         Assert.Equal("22.23.2", plan.DeclaredNodeVersion);
         Assert.Equal("22.23.2", plan.InstalledNodeVersion);
@@ -35,7 +35,7 @@ public class UpdatePlannerTests
             new FakeNodeSource { Latest = "22.23.2", Installed = "22.23.2" },
             new FakeToolSource());
 
-        UpdatePlan plan = await planner.CreateAsync(Config("22.23.2", []), "/env");
+        UpdatePlan plan = await planner.CreateAsync(Config("22.23.2", []));
 
         Assert.False(plan.HasNodeUpdate);
     }
@@ -47,7 +47,7 @@ public class UpdatePlannerTests
             new FakeNodeSource { Latest = null, Installed = "22.23.2" },
             new FakeToolSource());
 
-        UpdatePlan plan = await planner.CreateAsync(Config("22.23.2", []), "/env");
+        UpdatePlan plan = await planner.CreateAsync(Config("22.23.2", []));
 
         Assert.Null(plan.LatestNodeVersion);
         Assert.False(plan.HasNodeUpdate);
@@ -66,7 +66,7 @@ public class UpdatePlannerTests
             tools);
 
         UpdatePlan plan = await planner.CreateAsync(
-            Config("22.23.2", [("typescript", "5.6.3"), ("prettier", "3.4.2")]), "/env");
+            Config("22.23.2", [("typescript", "5.6.3"), ("prettier", "3.4.2")]));
 
         ToolUpdateEntry ts = plan.Tools.Single(t => t.Name == "typescript");
         Assert.Equal("5.6.3", ts.DeclaredVersion);
@@ -88,7 +88,7 @@ public class UpdatePlannerTests
         var tools = new FakeToolSource { Latest = new() { ["typescript"] = "5.9.2" } };
         var planner = new UpdatePlanner(new FakeNodeSource(), tools);
 
-        await planner.CreateAsync(Config("22.23.2", [("typescript", "5.6.3")]), "/env");
+        await planner.CreateAsync(Config("22.23.2", [("typescript", "5.6.3")]));
 
         Assert.All(tools.ResolvedWith, v => Assert.Equal("22.23.2", v));
     }
@@ -100,7 +100,7 @@ public class UpdatePlannerTests
         var planner = new UpdatePlanner(new FakeNodeSource(), tools);
 
         await planner.CreateAsync(
-            Config("22.23.2", [("typescript", "5.6.3")]), "/env", nodeReference: "26.8.1");
+            Config("22.23.2", [("typescript", "5.6.3")]), nodeReference: "26.8.1");
 
         Assert.All(tools.ResolvedWith, v => Assert.Equal("26.8.1", v));
     }
@@ -116,7 +116,7 @@ public class UpdatePlannerTests
         var planner = new UpdatePlanner(new FakeNodeSource(), tools);
 
         UpdatePlan plan = await planner.CreateAsync(
-            Config("22.23.2", [("typescript", "5.6.3"), ("prettier", "3.4.2")]), "/env");
+            Config("22.23.2", [("typescript", "5.6.3"), ("prettier", "3.4.2")]));
 
         Assert.Equal("package not found", plan.Tools.Single(t => t.Name == "typescript").Error);
         Assert.Equal("net down", plan.Tools.Single(t => t.Name == "prettier").Error);
@@ -128,7 +128,7 @@ public class UpdatePlannerTests
     {
         var planner = new UpdatePlanner(new FakeNodeSource(), new FakeToolSource());
 
-        UpdatePlan plan = await planner.CreateAsync(Config(null, []), "/env");
+        UpdatePlan plan = await planner.CreateAsync(Config(null, []));
 
         Assert.Equal("", plan.DeclaredNodeVersion);
     }
@@ -167,7 +167,7 @@ public class UpdatePlannerTests
         public string? Installed { get; init; }
         public string? Latest { get; init; }
 
-        public string? GetInstalledNodeVersion(string envDir) => Installed;
+        public string? GetInstalledNodeVersion(NemConfig config) => Installed;
 
         public Task<string?> GetLatestStableNodeVersionAsync() => Task.FromResult(Latest);
     }
@@ -194,7 +194,7 @@ public class UpdatePlannerTests
             return Latest.TryGetValue(packageName, out string? version) ? version : null;
         }
 
-        public string? GetInstalledVersion(string envDir, string packageName) =>
+        public string? GetInstalledVersion(NemConfig config, string packageName) =>
             Installed.TryGetValue(packageName, out string? version) ? version : null;
     }
 }

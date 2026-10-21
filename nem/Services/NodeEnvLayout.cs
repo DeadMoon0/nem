@@ -39,7 +39,7 @@ public sealed class NodeEnvLayout
         return new NodeEnvLayout(envDir, isWindows);
     }
 
-    /// <summary>The env root (.nenv directory).</summary>
+    /// <summary>The root of the layout: a Node entry, a tool entry or a globals folder.</summary>
     public string EnvDir { get; }
 
     public bool IsWindows { get; }
