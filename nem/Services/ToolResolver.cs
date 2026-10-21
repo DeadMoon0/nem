@@ -74,6 +74,9 @@ public static class ToolResolver
         }
 
         chain.Add(new ResolutionStep("env", env.DirPath));
+        chain.Add(new ResolutionStep("env state", AutoInstaller.Describe(
+            AutoInstaller.Inspect(env),
+            AutoInstaller.IsOptedOut(Environment.GetEnvironmentVariable(AutoInstaller.OptOutVariable)))));
 
         // 3. Does the env carry the tool?
         string? envTool = ProxyService.ResolveToolInEnv(env.EnvDirPath, toolName);

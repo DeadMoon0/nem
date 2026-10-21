@@ -122,7 +122,7 @@ internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
 
         SaveConfig(local, config);
         AnsiConsole.MarkupLine("[gray]Installing...[/]");
-        return await EnvironmentInstaller.InstallAsync(config, envDir, clean: false);
+        return await EnvironmentInstaller.InstallAsync(config, envDir, clean: false, audit: true);
     }
 
     /// <summary>
@@ -156,7 +156,7 @@ internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
 
         SaveConfig(local, config);
         AnsiConsole.MarkupLine("[gray]Installing...[/]");
-        return await EnvironmentInstaller.InstallAsync(config, envDir, clean: false);
+        return await EnvironmentInstaller.InstallAsync(config, envDir, clean: false, audit: true);
     }
 
     /// <summary>
@@ -203,7 +203,7 @@ internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
 
         SaveConfig(local, config);
         AnsiConsole.MarkupLine("[gray]Installing...[/]");
-        return await EnvironmentInstaller.InstallAsync(config, envDir, clean: false);
+        return await EnvironmentInstaller.InstallAsync(config, envDir, clean: false, audit: true);
     }
 
     /// <summary>
@@ -241,7 +241,7 @@ internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
 
         SaveConfig(local, config);
         AnsiConsole.MarkupLine("[gray]Installing...[/]");
-        return await EnvironmentInstaller.InstallAsync(config, envDir, clean: false);
+        return await EnvironmentInstaller.InstallAsync(config, envDir, clean: false, audit: true);
     }
 
     /// <summary>

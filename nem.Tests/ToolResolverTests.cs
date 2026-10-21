@@ -125,8 +125,8 @@ public class ToolResolverTests
 
         var resolution = ToolResolver.Resolve(tmp.FullName, "ng");
 
-        // typed name, env, env copy, project copy
-        Assert.Equal(4, resolution.Chain.Count);
+        // typed name, env, env state, env copy, project copy
+        Assert.Equal(5, resolution.Chain.Count);
         Assert.All(resolution.Chain, step => Assert.False(string.IsNullOrWhiteSpace(step.Finding)));
     }
 

@@ -68,13 +68,18 @@ public static class ProxyService
     }
 
     /// <summary>
-    /// Finds the nem env that contains the current directory and runs the tool in its context.
+    /// Finds the nem env that contains the current directory, installs it when it
+    /// no longer matches its config, and runs the tool in its context.
     /// Returns the tool's exit code.
     /// </summary>
     public static int CallToolInEnvContext(string tool, IReadOnlyList<string> args)
     {
+        string cwd = Directory.GetCurrentDirectory();
+        if (!AutoInstaller.TryPrepare(cwd, tool, out int installExit))
+            return installExit;
+
         // The same decision 'nem which' explains, so what runs is what it reports.
-        return ExecuteTool(ToolResolver.Resolve(Directory.GetCurrentDirectory(), tool), args);
+        return ExecuteTool(ToolResolver.Resolve(cwd, tool), args);
     }
 
     static int ExecuteTool(ToolResolver.ToolResolution resolution, IEnumerable<string> args)

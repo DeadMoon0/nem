@@ -119,6 +119,8 @@ public class ProxyServiceTests
         string binDir = Path.Combine(envDir, "bin");
         Directory.CreateDirectory(binDir);
         File.WriteAllText(Path.Combine(tmp.FullName, "nem.json"), "{}");
+        // Installed for exactly this config, so the call goes straight to the tool.
+        File.WriteAllText(Path.Combine(envDir, InstallStamp.FileName), InstallStamp.For(new nem.Common.Models.NemConfig()));
 
         string toolPath;
         if (OperatingSystem.IsWindows())

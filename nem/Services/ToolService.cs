@@ -48,13 +48,13 @@ public static class ToolService
         }
 
         string name = packageName!;
-        string? resolved = null;
+        ResolvedTool? resolved = null;
         string? resolveError = null;
         AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
             .Start($"Resolving {name} ...", _ =>
             {
-                resolved = ResolveVersion(name, version, config.NodeVersion ?? string.Empty, out resolveError);
+                resolved = ResolveTool(name, version, config.NodeVersion ?? string.Empty, out resolveError);
             });
 
         if (resolved == null)
@@ -65,13 +65,21 @@ public static class ToolService
 
         var existing = config.Tools.FirstOrDefault(t => string.Equals(t.ToolName, name, StringComparison.OrdinalIgnoreCase));
         if (existing != null)
-            existing.ToolVersion = resolved;
+            existing.ToolVersion = resolved.Version;
         else
-            config.Tools.Add(new NemToolConfig { ToolName = name, ToolVersion = resolved });
+            config.Tools.Add(new NemToolConfig { ToolName = name, ToolVersion = resolved.Version });
 
         NemConfigFile.Write(env.ConfigFilePath, config);
-        AnsiConsole.MarkupLine($"[green]Added[/] {name}@{resolved} to {Markup.Escape(env.ConfigFilePath)}.");
-        AnsiConsole.MarkupLine($"Run [green]nem install[/] to install it into the env.");
+        AnsiConsole.MarkupLine($"[green]Added[/] {name}@{resolved.Version} to {Markup.Escape(env.ConfigFilePath)}.");
+
+        // The proxies go in now, so typing a command reaches nem straight away -
+        // which then installs the tool on first use. Before, the name went to
+        // whatever else was on the PATH until someone ran 'nem install'.
+        var proxied = resolved.Bins.Where(ProxyService.TryInstallTool).ToList();
+        if (proxied.Count > 0)
+            AnsiConsole.MarkupLine($"Commands: [green]{Markup.Escape(string.Join(", ", proxied))}[/] - the first use installs it, or run [green]nem install[/] now.");
+        else
+            AnsiConsole.MarkupLine("Run [green]nem install[/] to install it into the env.");
         return 0;
     }
 
@@ -356,16 +364,7 @@ public static class ToolService
         {
             try
             {
-                var doc = JObject.Parse(File.ReadAllText(packageJson));
-                var bin = doc["bin"];
-                if (bin != null)
-                {
-                    if (bin.Type == JTokenType.String && !string.IsNullOrWhiteSpace(bin.ToString()))
-                        // A string bin value means 'the executable is named after the package'.
-                        bins.Add(DefaultBinName(packageName));
-                    else if (bin.Type == JTokenType.Object)
-                        bins.AddRange(((JObject)bin).Properties().Select(p => p.Name));
-                }
+                bins.AddRange(ToolBins.FromBinField(packageName, JObject.Parse(File.ReadAllText(packageJson))["bin"]));
             }
             catch (Exception)
             {
@@ -374,13 +373,10 @@ public static class ToolService
         }
 
         if (bins.Count == 0)
-            bins.Add(DefaultBinName(packageName));
+            bins.Add(ToolBins.DefaultBinName(packageName));
 
         return bins.Distinct().ToList();
     }
-
-    private static string DefaultBinName(string packageName) =>
-        packageName.Contains('/') ? packageName[(packageName.LastIndexOf('/') + 1)..] : packageName;
 
     /// <summary>
     /// Runs the env's npm and returns its (trimmed) stdout, or null on failure.
@@ -445,15 +441,31 @@ public static class ToolService
     /// Returns null with <paramref name="error"/> set to the reason when nothing
     /// could be resolved. Needs no Node: neither the env's nor one on the PATH.
     /// </summary>
-    public static string? ResolveVersion(string packageName, string? range, string nodeVersion, out string? error)
+    public static string? ResolveVersion(string packageName, string? range, string nodeVersion, out string? error) =>
+        ResolveTool(packageName, range, nodeVersion, out error)?.Version;
+
+    /// <summary>An exact tool version and the commands that version ships.</summary>
+    public sealed record ResolvedTool(string Version, IReadOnlyList<string> Bins);
+
+    /// <summary>
+    /// Like <see cref="ResolveVersion"/>, plus the commands of the chosen version,
+    /// read from the same registry document - so its proxies can exist before it
+    /// is installed.
+    /// </summary>
+    public static ResolvedTool? ResolveTool(string packageName, string? range, string nodeVersion, out string? error)
     {
         var registry = new NpmRegistryClient(Environment.GetEnvironmentVariable("npm_config_registry"));
-        VersionPick pick = registry.FetchPackument(packageName).Match(
-            ok: packument => ToolVersionPicker.Pick(packageName, packument, nodeVersion, range),
-            failed: (_, message) => new VersionPick.Unresolved(message));
+        (ResolvedTool? tool, string? reason) = registry.FetchPackument(packageName).Match<(ResolvedTool?, string?)>(
+            ok: packument => ToolVersionPicker.Pick(packageName, packument, nodeVersion, range) switch
+            {
+                VersionPick.Picked picked => (new ResolvedTool(picked.Version, packument.Versions.GetValueOrDefault(picked.Version)?.Bins ?? []), null),
+                VersionPick.Unresolved unresolved => (null, unresolved.Reason),
+                _ => throw new InvalidOperationException("VersionPick has exactly two cases."),
+            },
+            failed: (_, message) => (null, message));
 
-        error = (pick as VersionPick.Unresolved)?.Reason;
-        return (pick as VersionPick.Picked)?.Version;
+        error = reason;
+        return tool;
     }
 
     private static int NotInEnv()

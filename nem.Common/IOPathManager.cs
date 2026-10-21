@@ -163,5 +163,7 @@ public static class IOPathManager
         public string ExtractCacheDirPath { get => Path.Combine(DirPath, ExtractCacheDirName); }
         public string ProxyDirName { get; } = "proxy";
         public string ProxyDirPath { get => Path.Combine(DirPath, ProxyDirName); }
+        public string LockDirName { get; } = "locks";
+        public string LockDirPath { get => Path.Combine(DirPath, LockDirName); }
     }
 }

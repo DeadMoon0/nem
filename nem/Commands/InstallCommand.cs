@@ -21,6 +21,11 @@ internal class InstallCommandSettings : CommandSettings
     [DefaultValue(false)]
     [Description("If set, removes the cached download and the env folder before installing.")]
     public required bool Clean { get; init; }
+
+    [CommandOption("--no-audit")]
+    [DefaultValue(false)]
+    [Description("Skips the security audit after installing (it asks the npm registry).")]
+    public required bool NoAudit { get; init; }
 }
 
 internal class InstallCommand : AsyncCommand<InstallCommandSettings>
@@ -42,6 +47,6 @@ internal class InstallCommand : AsyncCommand<InstallCommandSettings>
         }
 
         string envDir = local.EnsureEnvDirPath();
-        return await EnvironmentInstaller.InstallAsync(config, envDir, settings.Clean);
+        return await EnvironmentInstaller.InstallAsync(config, envDir, settings.Clean, audit: !settings.NoAudit);
     }
 }

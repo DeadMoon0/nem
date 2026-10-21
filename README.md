@@ -56,7 +56,9 @@ The version is validated before anything is written:
 ### Manage tools (declarative)
 ```bash
 $ nem tool add ts-node@10.9.0
-# Records ts-node@10.9.0 in nem.jsonc. Nothing is installed yet.
+# Records ts-node@10.9.0 in nem.jsonc and registers proxies for its
+# commands (ts-node, ts-node-esm, ...). Nothing is installed yet: the
+# first time you type one of them, the env installs it.
 
 $ nem tool add @angular/cli
 # No version given? nem resolves the newest stable version whose
@@ -71,7 +73,7 @@ $ nem tool remove ts-node
 # it and deletes its proxies.
 ```
 
-The `nem tool` commands only touch `nem.jsonc` (and clean the env on remove) - they never install packages. That keeps them fast and lets you edit declarations before materializing.
+The `nem tool` commands only touch `nem.jsonc` and the proxies (and clean the env on remove) - they never install packages. That keeps them fast and lets you edit declarations before materializing. `nem tool add` reads the tool's command names from the registry, so its proxies exist before it is installed.
 
 ### Install the environment
 ```bash
@@ -85,9 +87,44 @@ $ nem install [path]
 
 $ nem install --clean [path]
 # Same, but wipes the cached zip, the cached extraction and .nenv first
+
+$ nem install --no-audit [path]
+# Skips the security audit (it asks the npm registry)
 ```
 
 `nem install` is idempotent - re-run it any time; only what is missing gets installed.
+Only one install runs per env at a time; a second one waits for the first.
+
+#### Auto-install
+
+You rarely have to run `nem install` yourself. Every tool start through nem checks
+whether the env still matches `nem.jsonc` - after a `git pull` or a branch switch
+that changed the Node version or a tool, it often does not - and installs the
+difference before the tool runs:
+
+```bash
+$ git pull              # nem.jsonc now says Node 22 instead of 20
+$ ng build
+The env does not match nem.jsonc - installing it before 'ng' runs...
+...
+Env installed. Run nem audit to check it for known vulnerabilities.
+<the build, on Node 22>
+```
+
+- The check is cheap: `nem install` leaves a record of what it installed in
+  `.nenv/.nem-installed`, and a tool start compares that with `nem.jsonc`. Nothing
+  is started for it.
+- The install output goes to stderr, so the tool's own output stays clean
+  (`npm ls --json > deps.json` is still valid JSON). The audit is skipped; run
+  `nem audit` when you want it.
+- If the install fails (e.g. offline), the tool is **not** started: running the
+  old toolchain in silence is what auto-install is there to prevent.
+- `NEM_AUTO_INSTALL=0` turns it off. A tool start then only warns that the env is
+  out of date, and runs anyway.
+- A fresh clone works the same way: the first tool you type installs the env.
+  That needs a name with a proxy on this machine - `npm` and `npx` always have
+  one - so a tool another teammate added starts working after the first
+  `npm`/`ng`/... you run, or after `nem install`.
 
 - If the Node version in `.nenv` does not match the declared version (e.g. after
   editing `nem.jsonc`), it is removed and the declared version is installed.
@@ -279,11 +316,13 @@ proxy dir on PATH (e.g. %APPDATA%\nem\proxy\ng.bat on Windows,
 ~/.config/nem/proxy/ng on Unix)
   -> nem run ng -- <args>
        1. walk up from CWD looking for nem.jsonc
-       2. if found: run the env's ng (shim + env node)
+       2. if found: install the env when it no longer matches
+          nem.jsonc (see Auto-install), then run the env's ng
+          (shim + env node)
        3. if not found: run the system ng (fallback)
 ```
 
-Proxies exist as `ng`, `ng.bat` (cmd) and `ng.ps1` (PowerShell). `nem install` re-creates the proxies for `npm`, `npx` and every tool in `nem.jsonc`, so a fresh checkout plus `nem install` makes all declared tools work.
+Proxies exist as `ng`, `ng.bat` (cmd) and `ng.ps1` (PowerShell). `nem tool add` creates them for the commands of the tool it adds, and `nem install` re-creates the proxies for `npm`, `npx` and every tool in `nem.jsonc`, so a fresh checkout plus `nem install` makes all declared tools work.
 
 Both routing and `nem which` ask the same resolver for that decision, so what runs and what is explained cannot drift apart - see [Which copy runs](#which-copy-runs).
 
@@ -316,6 +355,7 @@ The system directory is `%APPDATA%\nem\` on Windows and `~/.config/nem/` on Unix
 | `...\download\` | Node distribution downloads (kept for reuse) |
 | `...\extract\` | Extracted Node distributions |
 | `...\proxy\` | Global tool proxies (on your PATH) |
+| `...\locks\` | One lock file per env, so only one install runs in it at a time |
 
 ---
 

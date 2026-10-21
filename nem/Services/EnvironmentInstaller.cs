@@ -11,11 +11,48 @@ namespace nem.Services;
 /// <summary>
 /// The shared 'nem install' pipeline: install the Node version from the nem config,
 /// install every declared tool that is missing, refresh the npm/npx proxies,
-/// prune proxies that are stale for this env, and audit the result.
+/// audit the result and record it in the <see cref="InstallStamp"/>. One install
+/// per env at a time (<see cref="InstallLock"/>).
 /// </summary>
 public static class EnvironmentInstaller
 {
-    public static async Task<int> InstallAsync(NemConfig config, string envDir, bool clean)
+    /// <summary>
+    /// Set for everything an install starts. A package script that calls a proxied
+    /// name would otherwise reach 'nem run', find the env out of date (the install
+    /// is not finished) and start a second install that waits for this one's lock.
+    /// </summary>
+    public const string InstallingVariable = "NEM_INSTALLING";
+
+    // A large tool set over a slow connection takes minutes; waiting longer than
+    // this means the other install hangs.
+    static readonly TimeSpan LockTimeout = TimeSpan.FromMinutes(15);
+
+    public static async Task<int> InstallAsync(NemConfig config, string envDir, bool clean, bool audit)
+    {
+        using InstallLock? installLock = InstallLock.Acquire(envDir, LockTimeout,
+            onWait: () => AnsiConsole.MarkupLine("[gray]Another install is running in this env, waiting for it to finish...[/]"));
+        if (installLock == null)
+        {
+            AnsiConsole.MarkupLine($"[red]Gave up waiting for the other install in {Markup.Escape(envDir)} after {LockTimeout.TotalMinutes} minutes.[/]");
+            return 1;
+        }
+
+        Environment.SetEnvironmentVariable(InstallingVariable, envDir);
+
+        // The stamp says "the last install completed for this config". It goes first
+        // and only comes back when this install succeeds, so a half-done env is
+        // never taken for a finished one.
+        string stampPath = Path.Combine(envDir, InstallStamp.FileName);
+        if (File.Exists(stampPath))
+            File.Delete(stampPath);
+
+        int exit = await InstallUnlockedAsync(config, envDir, clean, audit);
+        if (exit == 0)
+            File.WriteAllText(stampPath, InstallStamp.For(config));
+        return exit;
+    }
+
+    static async Task<int> InstallUnlockedAsync(NemConfig config, string envDir, bool clean, bool audit)
     {
         try
         {
@@ -47,7 +84,7 @@ public static class EnvironmentInstaller
         // such instead of going unnoticed.
         PathPrecedence.ReportProxyReachability(ExpectedCommands(config, envDir));
 
-        if (exit == 0)
+        if (exit == 0 && audit)
             AuditService.ReportSummary(envDir);
 
         return exit;

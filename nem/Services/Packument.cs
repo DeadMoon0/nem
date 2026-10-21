@@ -7,11 +7,12 @@ namespace nem.Services;
 
 /// <summary>One published version of a package, as far as version resolution cares.</summary>
 /// <param name="EnginesNode">The release's engines.node range, or null when it declares none.</param>
-public sealed record PackumentVersion(string? EnginesNode);
+/// <param name="Bins">The commands the release ships (its "bin" field), empty when none.</param>
+public sealed record PackumentVersion(string? EnginesNode, IReadOnlyList<string> Bins);
 
 /// <summary>
-/// The parts of a registry package document ("packument") that version
-/// resolution reads: every published version and the dist-tags.
+/// The parts of a registry package document ("packument") that nem reads: every
+/// published version (its Node range and commands) and the dist-tags.
 /// </summary>
 public sealed record Packument(
     IReadOnlyDictionary<string, PackumentVersion> Versions,
@@ -35,14 +36,16 @@ public sealed record Packument(
             return null;
         }
 
+        string packageName = StringOrNull(root["name"]) ?? "";
         var versions = new Dictionary<string, PackumentVersion>(StringComparer.Ordinal);
         if (root["versions"] is JObject versionsObject)
         {
             foreach (JProperty version in versionsObject.Properties())
             {
+                var release = version.Value as JObject;
                 // engines is an array in some very old packages; only an object carries a node range.
-                JToken? enginesNode = ((version.Value as JObject)?["engines"] as JObject)?["node"];
-                versions[version.Name] = new PackumentVersion(StringOrNull(enginesNode));
+                JToken? enginesNode = (release?["engines"] as JObject)?["node"];
+                versions[version.Name] = new PackumentVersion(StringOrNull(enginesNode), ToolBins.FromBinField(packageName, release?["bin"]));
             }
         }
 

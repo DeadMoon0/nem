@@ -11,7 +11,7 @@ namespace nem.Tests;
 public class ToolVersionPickerTests
 {
     static Packument Package(Dictionary<string, string?> versions, Dictionary<string, string>? tags = null) =>
-        new(versions.ToDictionary(v => v.Key, v => new PackumentVersion(v.Value)), tags ?? new Dictionary<string, string>());
+        new(versions.ToDictionary(v => v.Key, v => new PackumentVersion(v.Value, [])), tags ?? new Dictionary<string, string>());
 
     static string? Picked(VersionPick pick) => (pick as VersionPick.Picked)?.Version;
 
