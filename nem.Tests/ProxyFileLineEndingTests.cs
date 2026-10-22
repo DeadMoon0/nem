@@ -15,7 +15,7 @@ public class ProxyFileLineEndingTests
     [Fact]
     public void The_Unix_proxy_has_no_carriage_returns()
     {
-        // A CRLF shebang makes Linux look for "bash\r" and refuse to run the proxy.
+        // A CRLF shebang makes Linux look for "sh\r" and refuse to run the proxy.
         Assert.DoesNotContain('\r', ShippedProxy("NAME"));
     }
 

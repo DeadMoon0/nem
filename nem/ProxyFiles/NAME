@@ -1,10 +1,8 @@
-#!/bin/bash
+#!/bin/sh
+# nem proxy: asks nem which copy of this tool to run here (installing the env
+# first if it has to), then runs it itself - nem is not running while the tool
+# does. exec hands the tool this shell's stdin, stdout, stderr and signals.
 
-# Get the script name (tool name)
-TOOL=$(basename "$0")
-
-# Call nem run with the tool name and all arguments
-nem run "$TOOL" -- "$@"
-
-# Propagate exit code
-exit $?
+resolved="$(nem resolve "$(basename "$0")" --shell sh)" || exit $?
+eval "$resolved"
+exec "$NEM_TOOL" "$@"

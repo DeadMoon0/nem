@@ -30,6 +30,10 @@ internal class SetupCommand : AsyncCommand<SetupCommandSettings>
     {
         await Task.CompletedTask;
 
+        // Proxies an older nem wrote start tools the old way; bring them up to date.
+        if (!settings.Uninstall)
+            ProxyService.RefreshProxies();
+
         if (!OperatingSystem.IsWindows())
             return settings.Uninstall ? RemoveUnixShellPath() : SetupUnixShellPath();
 

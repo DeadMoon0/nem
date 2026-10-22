@@ -1,4 +1,4 @@
-﻿using nem.Common;
+using nem.Common;
 using Spectre.Console;
 using System;
 using System.Collections.Generic;
@@ -11,14 +11,15 @@ namespace nem.Services;
 
 public static class ProxyService
 {
+    /// <summary>The proxy script templates nem ships, next to its own assembly.</summary>
+    static string ShippedTemplatesDir =>
+        Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, "ProxyFiles");
+
     /// <summary>
     /// Copies the proxy script templates (bat/ps1/sh) for the given tool name into the system proxy directory.
     /// </summary>
-    public static bool TryInstallTool(string toolName)
-    {
-        string nemDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
-        return TryInstallTool(toolName, Path.Combine(nemDir, "ProxyFiles"), IOPathManager.System.ProxyDirPath);
-    }
+    public static bool TryInstallTool(string toolName) =>
+        TryInstallTool(toolName, ShippedTemplatesDir, IOPathManager.System.ProxyDirPath);
 
     /// <summary>
     /// Copies the proxy script templates from <paramref name="proxyFilesDir"/>
@@ -68,8 +69,46 @@ public static class ProxyService
     }
 
     /// <summary>
+    /// Rewrites every proxy in the proxy directory that differs from the template
+    /// this nem ships, so proxies an older nem wrote start tools the current way.
+    /// The templates are generic (they take the tool name from their own file
+    /// name), so one comparison per file is enough.
+    /// </summary>
+    public static void RefreshProxies() => RefreshProxies(ShippedTemplatesDir, IOPathManager.System.ProxyDirPath);
+
+    internal static void RefreshProxies(string proxyFilesDir, string targetDir)
+    {
+        if (!Directory.Exists(targetDir))
+            return;
+
+        foreach (string proxy in Directory.EnumerateFiles(targetDir))
+        {
+            string? template = Path.GetExtension(proxy).ToLowerInvariant() switch
+            {
+                ".bat" => "NAME.bat",
+                ".ps1" => "NAME.ps1",
+                "" => "NAME",
+                _ => null,
+            };
+            string? templatePath = template == null ? null : Path.Combine(proxyFilesDir, template);
+            if (templatePath == null || !File.Exists(templatePath))
+                continue;
+
+            try
+            {
+                if (!File.ReadAllBytes(proxy).AsSpan().SequenceEqual(File.ReadAllBytes(templatePath)))
+                    TryCopyTemplate(template!, proxy, proxyFilesDir, targetDir);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // A proxy that is being run right now is refreshed next time.
+            }
+        }
+    }
+
+    /// <summary>
     /// Finds the nem env that contains the current directory, installs what the
-    /// store lacks of it, and runs the tool in its context.
+    /// store lacks of it, and runs the tool in its context as a child process.
     /// Returns the tool's exit code.
     /// </summary>
     public static int CallToolInEnvContext(string tool, IReadOnlyList<string> args) =>
@@ -77,53 +116,54 @@ public static class ProxyService
 
     internal static int CallToolInEnvContext(string tool, IReadOnlyList<string> args, string cwd, EnvStore store)
     {
-        if (!AutoInstaller.TryPrepare(cwd, tool, store, out int installExit))
-            return installExit;
-
-        // The same decision 'nem which' explains, so what runs is what it reports.
-        return ExecuteTool(ToolResolver.Resolve(cwd, tool, store), args);
+        ToolLaunch? launch = PrepareLaunch(tool, cwd, store, out int exitCode);
+        return launch == null ? exitCode : Start(launch, args);
     }
 
-    static int ExecuteTool(ToolResolver.ToolResolution resolution, IEnumerable<string> args)
+    /// <summary>
+    /// Everything up to starting a tool: installs what the store lacks of the env,
+    /// then resolves the tool the way 'nem which' explains it. Null, with the reason
+    /// on stderr and its exit code in <paramref name="exitCode"/>, when nothing can start.
+    /// </summary>
+    internal static ToolLaunch? PrepareLaunch(string tool, string cwd, EnvStore store, out int exitCode)
     {
-        string toolName = resolution.ToolName;
-        EnvComposition? env = resolution.Env;
+        if (!AutoInstaller.TryPrepare(cwd, tool, store, out exitCode))
+            return null;
 
+        ToolResolver.ToolResolution resolution = ToolResolver.Resolve(cwd, tool, store);
         if (resolution.ExecutablePath == null)
         {
-            if (env == null)
+            if (resolution.Env == null)
             {
-                AnsiConsole.MarkupLine($"[red]Error: Tool '{toolName}' not found on PATH.[/]");
-                return 1;
+                StdErr.Console.MarkupLine($"[red]Error: Tool '{Markup.Escape(tool)}' not found on PATH.[/]");
             }
-
-            AnsiConsole.MarkupLine($"[red]Error: Tool '{toolName}' is not available in the env.[/]");
-            AnsiConsole.MarkupLine($"Declare it with [green]nem tool add {toolName}[/], or install it into the env directly.");
-            return 1;
+            else
+            {
+                StdErr.Console.MarkupLine($"[red]Error: Tool '{Markup.Escape(tool)}' is not available in the env.[/]");
+                StdErr.Console.MarkupLine($"Declare it with [green]nem tool add {Markup.Escape(tool)}[/], or install it into the env directly.");
+            }
+            exitCode = 1;
+            return null;
         }
 
-        string resolvedToolPath = resolution.ExecutablePath;
+        exitCode = 0;
+        return new ToolLaunch(
+            resolution.ExecutablePath,
+            resolution.Env == null ? [] : ToolLaunch.EnvironmentFor(resolution.Env, Environment.GetEnvironmentVariable("PATH")));
+    }
 
+    /// <summary>Starts the tool with nem's own stdin, stdout and stderr, and waits for it.</summary>
+    static int Start(ToolLaunch launch, IEnumerable<string> args)
+    {
         var psi = new ProcessStartInfo
         {
-            FileName = resolvedToolPath,
+            FileName = launch.ExecutablePath,
             UseShellExecute = false
         };
         foreach (var arg in args)
             psi.ArgumentList.Add(arg);
-
-        if (env != null)
-        {
-            // The env's commands (tools, then Node) ahead of everything else.
-            psi.Environment["PATH"] = env.BuildPathVariable(Environment.GetEnvironmentVariable("PATH"));
-
-            // Let node require() find the env's tool packages.
-            psi.Environment["NODE_PATH"] = env.NodePath;
-
-            // 'npm install -g' must not write into a store entry, which other envs
-            // share; it goes to the per-Node-major globals folder instead.
-            psi.Environment["npm_config_prefix"] = env.GlobalsDir;
-        }
+        foreach ((string name, string value) in launch.Environment)
+            psi.Environment[name] = value;
 
         try
         {
@@ -133,7 +173,7 @@ public static class ProxyService
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[red]Error: Could not start '{resolvedToolPath}': {Markup.Escape(ex.Message)}[/]");
+            StdErr.Console.MarkupLine($"[red]Error: Could not start '{Markup.Escape(launch.ExecutablePath)}': {Markup.Escape(ex.Message)}[/]");
             return 1;
         }
     }

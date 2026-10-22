@@ -34,11 +34,6 @@ public static class AutoInstaller
         public sealed record Invalid(string Reason) : EnvState;
     }
 
-    static readonly IAnsiConsole Error = AnsiConsole.Create(new AnsiConsoleSettings
-    {
-        Out = new AnsiConsoleOutput(Console.Error),
-    });
-
     /// <summary>Maps the env's config onto the store. Reads the config and checks a few files; starts nothing.</summary>
     public static EnvState Inspect(IOPathManager.IOPathManagerEnv env, EnvStore store)
     {
@@ -100,7 +95,7 @@ public static class AutoInstaller
                 composition = composed.Env;
                 break;
             case EnvState.Invalid invalid:
-                Error.MarkupLine($"[red]Cannot run '{Markup.Escape(toolName)}' in {Markup.Escape(env.DirPath)}: {Markup.Escape(invalid.Reason)}.[/]");
+                StdErr.Console.MarkupLine($"[red]Cannot run '{Markup.Escape(toolName)}' in {Markup.Escape(env.DirPath)}: {Markup.Escape(invalid.Reason)}.[/]");
                 exitCode = 1;
                 return false;
             default:
@@ -111,18 +106,18 @@ public static class AutoInstaller
         {
             if (IsOptedOut(Environment.GetEnvironmentVariable(OptOutVariable)))
             {
-                Error.MarkupLine($"[yellow]Not in the store: {Markup.Escape(string.Join(", ", composition.Missing))}; run [green]nem install[/] (auto-install is off: {OptOutVariable}).[/]");
+                StdErr.Console.MarkupLine($"[yellow]Not in the store: {Markup.Escape(string.Join(", ", composition.Missing))}; run [green]nem install[/] (auto-install is off: {OptOutVariable}).[/]");
                 return true;
             }
 
-            Error.MarkupLine($"[gray]Not in the store yet: {Markup.Escape(string.Join(", ", composition.Missing))} - installing before '{Markup.Escape(toolName)}' runs...[/]");
+            StdErr.Console.MarkupLine($"[gray]Not in the store yet: {Markup.Escape(string.Join(", ", composition.Missing))} - installing before '{Markup.Escape(toolName)}' runs...[/]");
             exitCode = RunInstall(env);
             if (exitCode != 0)
             {
-                Error.MarkupLine($"[red]The install failed, so '{Markup.Escape(toolName)}' was not started. Fix the error above, or run [green]nem install[/].[/]");
+                StdErr.Console.MarkupLine($"[red]The install failed, so '{Markup.Escape(toolName)}' was not started. Fix the error above, or run [green]nem install[/].[/]");
                 return false;
             }
-            Error.MarkupLine("[gray]Installed. Run [green]nem audit[/] to check it for known vulnerabilities.[/]");
+            StdErr.Console.MarkupLine("[gray]Installed. Run [green]nem audit[/] to check it for known vulnerabilities.[/]");
         }
 
         DateTime now = DateTime.UtcNow;
@@ -131,7 +126,11 @@ public static class AutoInstaller
         return true;
     }
 
-    /// <summary>Runs 'nem install --no-audit' for the env, its stdout copied to stderr.</summary>
+    /// <summary>
+    /// Runs 'nem install --no-audit' for the env, its stdout copied to stderr. Its
+    /// stdin is closed at once: the tool's stdin ('cat data.json | ng ...') is for
+    /// the tool, and npm or a package script must not read a byte of it.
+    /// </summary>
     static int RunInstall(IOPathManager.IOPathManagerEnv env)
     {
         ProcessStartInfo psi = SelfStartInfo();
@@ -140,10 +139,12 @@ public static class AutoInstaller
         psi.ArgumentList.Add(env.DirPath);
         psi.WorkingDirectory = env.DirPath;
         psi.RedirectStandardOutput = true;
+        psi.RedirectStandardInput = true;
 
         try
         {
             using var process = Process.Start(psi)!;
+            process.StandardInput.Close();
             // Raw bytes, so npm's progress output keeps its carriage returns.
             Stream stderr = Console.OpenStandardError();
             process.StandardOutput.BaseStream.CopyTo(stderr);
@@ -153,7 +154,7 @@ public static class AutoInstaller
         }
         catch (Exception e)
         {
-            Error.MarkupLine($"[red]Could not start 'nem install': {Markup.Escape(e.Message)}[/]");
+            StdErr.Console.MarkupLine($"[red]Could not start 'nem install': {Markup.Escape(e.Message)}[/]");
             return 1;
         }
     }

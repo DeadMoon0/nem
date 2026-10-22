@@ -30,6 +30,10 @@ internal class Program
             config.AddCommand<InstallCommand>("install")
                 .WithDescription("Puts the env's Node version and tools into the store and creates their proxies. Tools also do this on first use.");
 
+            config.AddCommand<ResolveCommand>("resolve")
+                .WithDescription("Used by the proxies: installs what the env lacks, then prints the tool to start and its environment, for a shell to run.")
+                .IsHidden();
+
             config.AddCommand<RunCommand>("run")
                 .WithDescription("Runs a tool from the nem env (or the system fallback). Tool arguments follow the tool name.");
 

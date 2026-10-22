@@ -36,6 +36,17 @@ nem setup
 
 `nem setup --uninstall` takes the proxy directory back out of the PATH and deletes the proxies. The store stays where it is.
 
+### Updating nem
+
+```bash
+dotnet tool update -g nem
+```
+
+This works at any time, also while tools started through nem are running (a dev
+server, an MCP server through `npx`): the proxies start tools themselves, so nem only
+runs for the moment it takes to find the tool. Proxies an older nem wrote are
+brought up to date by the next `nem install`, `nem tool add` or `nem setup`.
+
 ## Usage
 
 ### Initialize a project
@@ -342,15 +353,27 @@ order), then `globals/node<major>` for `npm install -g`, then the Node entry.
 ```
 proxy dir on PATH (e.g. %APPDATA%\nem\proxy\ng.bat on Windows,
 ~/.config/nem/proxy/ng on Unix)
-  -> nem run ng -- <args>
+  -> nem resolve ng --shell <sh|cmd|ps>
        1. walk up from CWD looking for nem.jsonc
        2. if found: install what the store lacks of the env
-          (see Auto-install), then run the env's ng from the
-          store (shim + env node)
-       3. if not found: run the system ng (fallback)
+          (see Auto-install), then answer with the env's ng from
+          the store and the env's PATH, NODE_PATH, npm prefix
+       3. if not found: answer with the system ng (fallback)
+     nem exits
+  -> the proxy sets those variables and starts ng itself
 ```
 
-Proxies exist as `ng`, `ng.bat` (cmd) and `ng.ps1` (PowerShell). `nem tool add` creates them for the commands of the tool it adds, and `nem install` re-creates the proxies for `npm`, `npx` and every tool in `nem.jsonc`, so a fresh checkout plus `nem install` makes all declared tools work.
+Proxies exist as `ng` (sh), `ng.bat` (cmd) and `ng.ps1` (PowerShell). Because the
+proxy starts the tool and not nem, the tool gets the shell's own stdin, stdout and
+stderr, its exit code comes back unchanged, and on Unix `exec` hands it the signals
+(Ctrl+C) directly. `nem resolve` itself writes only its answer to stdout - errors and
+auto-install progress go to stderr - and gives the install an empty stdin, so piped
+input (`cat data.json | ng ...`) reaches the tool untouched. The PowerShell proxy
+restores the session's environment once the tool ends.
+
+`nem run ng -- <args>` does the same in one step, with the tool as nem's child process.
+
+`nem tool add` creates proxies for the commands of the tool it adds, and `nem install` re-creates the proxies for `npm`, `npx` and every tool in `nem.jsonc`, so a fresh checkout plus `nem install` makes all declared tools work. `nem tool add` creates them for the commands of the tool it adds, and `nem install` re-creates the proxies for `npm`, `npx` and every tool in `nem.jsonc`, so a fresh checkout plus `nem install` makes all declared tools work.
 
 Both routing and `nem which` ask the same resolver for that decision, so what runs and what is explained cannot drift apart - see [Which copy runs](#which-copy-runs).
 

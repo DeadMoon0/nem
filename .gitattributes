@@ -1,8 +1,8 @@
 # Line endings that must not depend on core.autocrlf: these files ship in the
 # NuGet package as-is, so a Windows checkout must not rewrite them.
 
-# The Unix proxy runs via its #!/bin/bash shebang; a CRLF there makes Linux
-# look for "bash\r" and fail with "required file not found".
+# The Unix proxy runs via its #!/bin/sh shebang; a CRLF there makes Linux
+# look for "sh\r" and fail with "required file not found".
 nem/ProxyFiles/NAME text eol=lf
 *.sh text eol=lf
 
