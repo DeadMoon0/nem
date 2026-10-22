@@ -26,14 +26,10 @@ public static class IOPathManager
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData, Environment.SpecialFolderOption.DoNotVerify);
 
     /// <summary>
-    /// The config file names nem accepts, the preferred one first. A new env gets
-    /// '.jsonc' because the file is hand-edited and may carry comments; 'nem.json'
-    /// stays readable so envs created before that keep working untouched.
+    /// The config file of an env. JSONC, because the file is hand-edited and may
+    /// carry comments.
     /// </summary>
-    public static IReadOnlyList<string> ConfigFileNames { get; } = ["nem.jsonc", "nem.json"];
-
-    /// <summary>The accepted names as one phrase for messages, e.g. "nem.jsonc or nem.json".</summary>
-    public static string ConfigFileNamesText { get; } = string.Join(" or ", ConfigFileNames);
+    public const string ConfigFileName = "nem.jsonc";
 
     /// <summary>
     /// The nem paths of a folder, whether or not it holds an env yet. Use this to
@@ -47,25 +43,13 @@ public static class IOPathManager
 
     /// <summary>
     /// The env <paramref name="dirPath"/> itself holds, if any (relative paths
-    /// resolve against the current directory). This is the one place that decides
-    /// which of the <see cref="ConfigFileNames"/> a project actually uses, so no
-    /// caller has to spell out the fallback.
+    /// resolve against the current directory).
     /// </summary>
     public static bool TryGetEnv(string dirPath, [NotNullWhen(true)] out IOPathManagerEnv? env)
     {
         string fullDirPath = Path.GetFullPath(dirPath);
-
-        foreach (string configFileName in ConfigFileNames)
-        {
-            if (File.Exists(Path.Combine(fullDirPath, configFileName)))
-            {
-                env = new IOPathManagerEnv(fullDirPath, configFileName);
-                return true;
-            }
-        }
-
-        env = null;
-        return false;
+        env = File.Exists(Path.Combine(fullDirPath, ConfigFileName)) ? new IOPathManagerEnv(fullDirPath) : null;
+        return env != null;
     }
 
     /// <summary>
@@ -91,34 +75,18 @@ public static class IOPathManager
     {
         public string DirPath { get => path; }
 
-        /// <summary>
-        /// The name a config created here gets. An <see cref="IOPathManagerEnv"/>
-        /// reports the name it actually found instead, so writing back to
-        /// <see cref="ConfigFilePath"/> never renames an existing config.
-        /// </summary>
-        public virtual string ConfigFileName { get => ConfigFileNames[0]; }
         public string ConfigFilePath { get => Path.Combine(path, ConfigFileName); }
-
-        /// <summary>
-        /// The per-project env folder nem used before the shared store. Nothing reads
-        /// it any more; it is only named so nem can say that it may be deleted.
-        /// </summary>
-        public string LegacyEnvDirPath { get => Path.Combine(path, ".nenv"); }
     }
 
     /// <summary>
     /// The paths of an env that was actually found. Only <see cref="TryGetEnv"/> and
     /// <see cref="TryFindEnv"/> create one, so holding an instance is proof that the
     /// config file was there - no caller has to re-check, and no command can invent
-    /// its own idea of where the env lives or which config name it uses.
+    /// its own idea of where the env lives.
     /// </summary>
     public class IOPathManagerEnv : IOPathManagerLocal
     {
-        internal IOPathManagerEnv(string dirPath, string configFileName) : base(dirPath)
-            => ConfigFileName = configFileName;
-
-        /// <summary>The config file that was found, not the name a new one would get.</summary>
-        public override string ConfigFileName { get; }
+        internal IOPathManagerEnv(string dirPath) : base(dirPath) { }
     }
 
     /// <summary>
@@ -153,12 +121,6 @@ public static class IOPathManager
         public string StoreDirPath { get => Path.Combine(DirPath, "store"); }
         /// <summary>Where 'npm install -g' inside an env goes, one folder per Node major version.</summary>
         public string GlobalsDirPath { get => Path.Combine(DirPath, "globals"); }
-
-        /// <summary>
-        /// The download and extract caches of nem versions before the store. Only
-        /// named so 'nem store prune' can remove them.
-        /// </summary>
-        public IReadOnlyList<string> LegacyCacheDirPaths { get => [Path.Combine(DirPath, "download"), Path.Combine(DirPath, "extract")]; }
 
         public string ProxyDirName { get; } = "proxy";
         public string ProxyDirPath { get => Path.Combine(DirPath, ProxyDirName); }

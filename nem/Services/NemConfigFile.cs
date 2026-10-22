@@ -7,15 +7,13 @@ namespace nem.Services;
 
 /// <summary>
 /// The project config file, in the one place that knows its format. It is hand-edited
-/// project state, so it may carry comments - Newtonsoft skips those on read, and a
-/// new '.jsonc' file is created with a header explaining what the file is. A '.json'
-/// file never gets that header: a comment would make it invalid JSON for every other
-/// tool that reads it.
+/// project state, so it may carry comments - Newtonsoft skips those on read, and
+/// the file is written with a header explaining what it is.
 /// </summary>
 public static class NemConfigFile
 {
     /// <summary>
-    /// The banner a new '.jsonc' config is created with. Normalized to this machine's
+    /// The banner every config is written with. Normalized to this machine's
     /// line endings so the written file does not depend on how this source file was
     /// checked out.
     /// </summary>
@@ -62,18 +60,9 @@ public static class NemConfigFile
     /// <summary>
     /// The text a config file gets, for the config exactly as given - including its
     /// <see cref="NemConfig.Version"/>, which <see cref="Write"/> stamps beforehand.
-    /// The header only goes into a file that may hold comments, so serializing for a
-    /// '.json' target still yields plain JSON.
     /// </summary>
-    public static string Serialize(NemConfig config, bool withHeader)
-    {
-        string json = JsonConvert.SerializeObject(config, Formatting.Indented);
-        return (withHeader ? Header + Environment.NewLine + json : json) + Environment.NewLine;
-    }
-
-    /// <summary>True for a config file that may hold comments, i.e. the '.jsonc' one.</summary>
-    public static bool AllowsComments(string configFilePath) =>
-        string.Equals(Path.GetExtension(configFilePath), ".jsonc", StringComparison.OrdinalIgnoreCase);
+    public static string Serialize(NemConfig config) =>
+        Header + Environment.NewLine + JsonConvert.SerializeObject(config, Formatting.Indented) + Environment.NewLine;
 
     /// <exception cref="UnsupportedConfigVersionException">
     /// The file declares a schema newer than <see cref="NemConfigVersion.Current"/>.
@@ -99,6 +88,6 @@ public static class NemConfigFile
     public static void Write(string configFilePath, NemConfig config)
     {
         config.Version = NemConfigVersion.Current;
-        File.WriteAllText(configFilePath, Serialize(config, AllowsComments(configFilePath)));
+        File.WriteAllText(configFilePath, Serialize(config));
     }
 }

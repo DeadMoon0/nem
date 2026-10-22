@@ -49,7 +49,7 @@ public static class AutoInstaller
         }
         catch (Exception e)
         {
-            return new EnvState.Invalid($"{env.ConfigFileName} cannot be read: {e.Message}");
+            return new EnvState.Invalid($"{IOPathManager.ConfigFileName} cannot be read: {e.Message}");
         }
 
         return EnvComposition.Compose(config, store) switch

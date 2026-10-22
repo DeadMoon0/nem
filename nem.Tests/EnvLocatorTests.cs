@@ -11,14 +11,13 @@ namespace nem.Tests;
 public class EnvLocatorTests
 {
     [Theory]
-    [InlineData("", "nem.jsonc")]
-    [InlineData("frontend", "nem.jsonc")]
-    [InlineData("frontend/src/app", "nem.jsonc")]
-    [InlineData("frontend/src/app", "nem.json")]
-    public void TryLocate_Accepts_Any_Folder_Inside_The_Env(string sub, string configFileName)
+    [InlineData("")]
+    [InlineData("frontend")]
+    [InlineData("frontend/src/app")]
+    public void TryLocate_Accepts_Any_Folder_Inside_The_Env(string sub)
     {
         using var tmp = new TempDir();
-        File.WriteAllText(Path.Combine(tmp.FullName, configFileName), "{}");
+        File.WriteAllText(Path.Combine(tmp.FullName, IOPathManager.ConfigFileName), "{}");
         string start = Path.Combine(tmp.FullName, sub.Replace('/', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(start);
 

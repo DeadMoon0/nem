@@ -72,9 +72,6 @@ public static class EnvironmentInstaller
         foreach (string entryDir in composition.EntryDirs.Where(Directory.Exists))
             EnvStore.Touch(entryDir, now);
 
-        if (Directory.Exists(env.LegacyEnvDirPath))
-            AnsiConsole.MarkupLine($"[gray]{Markup.Escape(env.LegacyEnvDirPath)} is no longer used (envs live in the store now) and can be deleted.[/]");
-
         PruneStore(store, now, PruneAfter, quiet: true);
         return exit;
     }
@@ -115,8 +112,7 @@ public static class EnvironmentInstaller
     }
 
     /// <summary>
-    /// Removes store entries nobody used within <paramref name="maxAge"/>, and the
-    /// download and extract caches of nem versions before the store.
+    /// Removes store entries nobody used within <paramref name="maxAge"/>.
     /// <paramref name="quiet"/> only reports what was actually removed.
     /// </summary>
     public static void PruneStore(EnvStore store, DateTime now, TimeSpan maxAge, bool quiet)
@@ -126,12 +122,6 @@ public static class EnvironmentInstaller
             AnsiConsole.MarkupLine($"[gray]Removed {entry.Kind} {Markup.Escape(entry.Name)} from the store (last used {entry.LastUsed.ToLocalTime():yyyy-MM-dd}).[/]");
         foreach (EnvStore.Entry entry in result.Busy)
             AnsiConsole.MarkupLine($"[yellow]Kept {entry.Kind} {Markup.Escape(entry.Name)}: it is in use right now.[/]");
-
-        foreach (string legacy in IOPathManager.System.LegacyCacheDirPaths.Where(Directory.Exists))
-        {
-            if (store.TryDelete(legacy))
-                AnsiConsole.MarkupLine($"[gray]Removed {Markup.Escape(legacy)}, a cache of nem versions before the store.[/]");
-        }
 
         if (!quiet && result.Removed.Count == 0 && result.Busy.Count == 0)
             AnsiConsole.MarkupLine($"[green]Nothing to prune: every store entry was used within the last {maxAge.TotalDays:0} days.[/]");

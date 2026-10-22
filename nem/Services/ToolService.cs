@@ -492,7 +492,7 @@ public static class ToolService
 
     private static int NotInEnv()
     {
-        AnsiConsole.MarkupLine($"[red]No {Markup.Escape(IOPathManager.ConfigFileNamesText)} found in the current directory or any parent.[/]");
+        AnsiConsole.MarkupLine($"[red]No {IOPathManager.ConfigFileName} found in the current directory or any parent.[/]");
         AnsiConsole.MarkupLine($"Run [green]nem init <nodeVersion>[/] in your project root first.");
         return 1;
     }

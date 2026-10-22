@@ -48,7 +48,7 @@ public class ToolSpecParsingTests
     public void IsToolInstalled_Reflects_The_Env_Modules_Root()
     {
         using var tmp = new TempDir();
-        string envDir = Path.Combine(tmp.FullName, ".nenv");
+        string envDir = Path.Combine(tmp.FullName, "entry");
         string modulesRoot = NodeEnvLayout.Create(envDir).ModulesRoot;
 
         Assert.False(ToolService.IsToolInstalled(envDir, "typescript"));
@@ -71,7 +71,7 @@ public class ToolSpecParsingTests
     public void ReadToolBins_Uses_The_Bin_Field_From_The_Package()
     {
         using var tmp = new TempDir();
-        string envDir = Path.Combine(tmp.FullName, ".nenv");
+        string envDir = Path.Combine(tmp.FullName, "entry");
         string packageDir = Path.Combine(NodeEnvLayout.Create(envDir).ModulesRoot, "typescript");
         Directory.CreateDirectory(packageDir);
 
@@ -93,7 +93,7 @@ public class ToolSpecParsingTests
     public void ReadToolBins_Guesses_The_Short_Name_For_Scoped_Packages()
     {
         using var tmp = new TempDir();
-        string envDir = Path.Combine(tmp.FullName, ".nenv");
+        string envDir = Path.Combine(tmp.FullName, "entry");
 
         Assert.Equal(["cli"], ToolService.ReadToolBins(envDir, "@angular/cli"));
     }

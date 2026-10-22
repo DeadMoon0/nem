@@ -168,9 +168,6 @@ $ nem store prune                 # remove entries unused for 180 days
 $ nem store prune --older-than 30 # ... or for 30 days
 ```
 
-Projects set up with nem before the store carry a `.nenv/` folder. Nothing uses it
-any more; `nem install` says so, and it can be deleted.
-
 ### Security audit
 
 After installing, nem audits **every package** of the env's tools (including
@@ -323,15 +320,8 @@ a version is pinned. `nem init` writes a short header explaining what the file i
 the shape of the file changes, and nem maintains it for you. It exists so the format
 can grow later without guesswork: a config written by a newer nem than the one you
 have is refused with a plain "update nem" message instead of being read halfway and
-saved back with the unknown parts dropped. A config with no `Version` (anything
-written before this existed) counts as version 1, and is stamped the next time nem
-saves it.
-
-> Envs created before JSONC support carry a plain `nem.json`. Those keep working
-> unchanged: nem reads either name (preferring `nem.jsonc` if both are present) and
-> writes back to the one your project already has, so a `nem.json` never grows
-> comments that would make it invalid JSON. Rename it to `nem.jsonc` yourself if
-> you want to start using comments.
+saved back with the unknown parts dropped. A config with no `Version` counts as
+version 1, and is stamped the next time nem saves it.
 
 > nem rewrites the file on `nem update` and `nem tool`, and only the generated
 > header survives that - hand-written comments elsewhere are lost.

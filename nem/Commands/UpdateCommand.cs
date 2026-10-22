@@ -193,7 +193,7 @@ internal class UpdateCommand : AsyncCommand<UpdateCommandSettings>
         if (!string.Equals(config.NodeVersion, version, StringComparison.OrdinalIgnoreCase))
         {
             config.NodeVersion = version;
-            AnsiConsole.MarkupLine($"[gray]Updated {local.ConfigFileName} to Node version [green]{version}[/].[/]");
+            AnsiConsole.MarkupLine($"[gray]Updated {IOPathManager.ConfigFileName} to Node version [green]{version}[/].[/]");
         }
         else
         {

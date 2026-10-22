@@ -14,8 +14,6 @@ public static class IOService
     {
         var local = IOPathManager.Local(path);
 
-        // An env created before the '.jsonc' config keeps its own file name, so
-        // re-initializing one never leaves two configs behind.
         if (IOPathManager.TryGetEnv(path, out IOPathManager.IOPathManagerEnv? existingEnv))
             ReconcileNodeVersion(existingEnv, version);
         else
@@ -31,13 +29,13 @@ public static class IOService
         NemConfig existing = NemConfigFile.Read(env.ConfigFilePath);
         if (string.Equals(existing.NodeVersion, version, StringComparison.OrdinalIgnoreCase))
         {
-            AnsiConsole.MarkupLine($"[yellow]Skipped {env.ConfigFileName} because it already exists.[/]");
+            AnsiConsole.MarkupLine($"[yellow]Skipped {IOPathManager.ConfigFileName} because it already exists.[/]");
             return;
         }
 
         existing.NodeVersion = version;
         NemConfigFile.Write(env.ConfigFilePath, existing);
-        AnsiConsole.MarkupLine($"[yellow]Updated {env.ConfigFileName} to Node version {version}.[/]");
+        AnsiConsole.MarkupLine($"[yellow]Updated {IOPathManager.ConfigFileName} to Node version {version}.[/]");
     }
 
     /// <summary>

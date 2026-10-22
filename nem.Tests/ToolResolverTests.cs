@@ -20,7 +20,7 @@ public class ToolResolverTests
     static string MakeEnv(string root, string packageName, params string[] bins)
     {
         File.WriteAllText(
-            Path.Combine(root, "nem.json"),
+            Path.Combine(root, "nem.jsonc"),
             $"{{\"NodeVersion\":\"22.0.0\",\"Tools\":[{{\"ToolName\":\"{packageName}\",\"ToolVersion\":\"1.0.0\"}}]}}");
 
         EnvStore store = StoreOf(root);

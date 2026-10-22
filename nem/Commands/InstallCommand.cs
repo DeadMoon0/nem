@@ -42,7 +42,7 @@ internal class InstallCommand : AsyncCommand<InstallCommandSettings>
         NemConfig config = NemConfigFile.Read(local.ConfigFilePath);
         if (string.IsNullOrWhiteSpace(config.NodeVersion))
         {
-            AnsiConsole.MarkupLine($"[red]{local.ConfigFileName} does not specify a 'NodeVersion'.[/]");
+            AnsiConsole.MarkupLine($"[red]{IOPathManager.ConfigFileName} does not specify a 'NodeVersion'.[/]");
             return 1;
         }
 

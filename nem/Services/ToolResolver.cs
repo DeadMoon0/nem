@@ -66,7 +66,7 @@ public static class ToolResolver
         // 2. Is there an env above the cwd?
         if (!IOPathManager.TryFindEnv(cwd, out IOPathManager.IOPathManagerEnv? env))
         {
-            chain.Add(new ResolutionStep("env", $"no {IOPathManager.ConfigFileNamesText} in this folder or above"));
+            chain.Add(new ResolutionStep("env", $"no {IOPathManager.ConfigFileName} in this folder or above"));
             string? system = ProxyService.ResolveSystemTool(toolName);
             chain.Add(new ResolutionStep("system tool", system ?? "not found on the PATH", Decided: true));
 

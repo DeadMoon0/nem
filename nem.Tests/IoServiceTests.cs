@@ -5,8 +5,7 @@ using nem.Services;
 namespace nem.Tests;
 
 /// <summary>
-/// nem.jsonc creation, including what happens to an env that still carries the
-/// older nem.json.
+/// nem.jsonc creation and re-initialization.
 /// </summary>
 public class IoServiceTests
 {
@@ -47,35 +46,6 @@ public class IoServiceTests
         Assert.Single(config.Tools);
         Assert.Equal("typescript", config.Tools[0].ToolName);
         Assert.Equal("5.6.3", config.Tools[0].ToolVersion);
-    }
-
-    /// <summary>
-    /// An env created before the '.jsonc' config keeps its file: re-initializing it
-    /// must update that one and not drop a second config next to it, which would
-    /// shadow the first from then on.
-    /// </summary>
-    [Fact]
-    public void InitEnv_Updates_A_Legacy_Json_Config_In_Place()
-    {
-        using var tmp = new TempDir();
-        string legacyPath = Path.Combine(tmp.FullName, "nem.json");
-        NemConfigFile.Write(legacyPath, new NemConfig
-        {
-            NodeVersion = "22.0.0",
-            Tools = [new NemToolConfig { ToolName = "typescript", ToolVersion = "5.6.3" }],
-        });
-
-        IOService.InitEnv(tmp.FullName, "22.23.2");
-
-        Assert.False(File.Exists(Path.Combine(tmp.FullName, "nem.jsonc")));
-        string text = File.ReadAllText(legacyPath);
-        Assert.DoesNotContain("/*", text);
-
-        NemConfig config = NemConfigFile.Parse(text);
-        Assert.Equal("22.23.2", config.NodeVersion);
-        Assert.Single(config.Tools);
-        // Rewriting an unversioned config is what brings it onto the versioned schema.
-        Assert.Equal(NemConfigVersion.Current, config.Version);
     }
 
     [Fact]

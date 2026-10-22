@@ -17,7 +17,7 @@ internal static class EnvLocator
     {
         if (!IOPathManager.TryFindEnv(startDir, out env))
         {
-            AnsiConsole.MarkupLine($"[red]No {Markup.Escape(IOPathManager.ConfigFileNamesText)} found in {Markup.Escape(startDir)} or any folder above it.[/]");
+            AnsiConsole.MarkupLine($"[red]No {IOPathManager.ConfigFileName} found in {Markup.Escape(startDir)} or any folder above it.[/]");
             AnsiConsole.MarkupLine("Run [green]nem init <nodeVersion>[/] in your project root to create an env.");
             return false;
         }

@@ -46,9 +46,6 @@ internal class InitCommand : AsyncCommand<InitCommandSettings>
             AnsiConsole.MarkupLine($"[gray]Resolved '{Markup.Escape(requested)}' to Node.js [green]{version}[/] (newest matching release).[/]");
         AnsiConsole.MarkupLine($"[gray]Node Version: [green]{version}[/][/]");
 
-        var local = IOPathManager.Local(path);
-        // An env already here keeps its own config file name, so 'nem init' on a
-        // pre-'.jsonc' project reads and rewrites that file instead of adding a second one.
         if (IOPathManager.TryGetEnv(path, out IOPathManager.IOPathManagerEnv? existingEnv))
         {
             NemConfig existing = NemConfigFile.Read(existingEnv.ConfigFilePath);
@@ -58,14 +55,14 @@ internal class InitCommand : AsyncCommand<InitCommandSettings>
                     ? await NodeDownloadingService.ResolveNodeVersionAsync(declared)
                     : declared;
                 AnsiConsole.WriteLine("");
-                AnsiConsole.MarkupLine($"[red]A {existingEnv.ConfigFileName} already exists in {Markup.Escape(path)} with Node version [green]{shown}[/].[/]");
+                AnsiConsole.MarkupLine($"[red]A {IOPathManager.ConfigFileName} already exists in {Markup.Escape(path)} with Node version [green]{shown}[/].[/]");
                 AnsiConsole.MarkupLine("[red]Use [green]nem update[/] to change the Node version of an existing env.[/]");
                 return 1;
             }
         }
         else
         {
-            WarnAboutOuterEnv(path, local);
+            WarnAboutOuterEnv(path);
         }
 
         AnsiConsole.WriteLine("");
@@ -87,7 +84,7 @@ internal class InitCommand : AsyncCommand<InitCommandSettings>
     /// is called out instead of happening quietly. Only reached when this folder
     /// holds no env yet, because re-initializing one shadows nothing new.
     /// </summary>
-    static void WarnAboutOuterEnv(string path, IOPathManager.IOPathManagerLocal local)
+    static void WarnAboutOuterEnv(string path)
     {
         string? parent = Path.GetDirectoryName(path);
         if (parent == null || !IOPathManager.TryFindEnv(parent, out IOPathManager.IOPathManagerEnv? outer))
@@ -95,7 +92,7 @@ internal class InitCommand : AsyncCommand<InitCommandSettings>
 
         AnsiConsole.WriteLine("");
         AnsiConsole.MarkupLine($"[yellow]Note: {Markup.Escape(outer.DirPath)} already holds an env.[/]");
-        AnsiConsole.MarkupLine($"[yellow]A second {Markup.Escape(local.ConfigFileName)} here shadows it, so its tools stop resolving below {Markup.Escape(path)}.[/]");
+        AnsiConsole.MarkupLine($"[yellow]A second {IOPathManager.ConfigFileName} here shadows it, so its tools stop resolving below {Markup.Escape(path)}.[/]");
         AnsiConsole.MarkupLine($"[yellow]To use the existing env instead, run [green]nem install[/] from anywhere inside it.[/]");
     }
 }

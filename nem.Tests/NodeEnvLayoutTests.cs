@@ -4,7 +4,7 @@ using nem.Services;
 namespace nem.Tests;
 
 /// <summary>
-/// The platform layout of a .nenv directory (binary names, npm entry point,
+/// The platform layout of a store entry (binary names, npm entry point,
 /// module root, PATH construction) is the single source of truth for all
 /// services, so it must be stable for both operating systems.
 /// </summary>
@@ -13,27 +13,27 @@ public class NodeEnvLayoutTests
     [Fact]
     public void Windows_Layout_Keeps_The_Env_Root_As_Bin_Dir()
     {
-        var layout = NodeEnvLayout.Create(@"C:\proj\.nenv", isWindows: true);
+        var layout = NodeEnvLayout.Create(@"C:\nem\store\node\22.23.3", isWindows: true);
 
         Assert.True(layout.IsWindows);
-        Assert.Equal(@"C:\proj\.nenv", layout.EnvDir);
-        Assert.Equal(@"C:\proj\.nenv", layout.BinDir);
-        Assert.Equal(Path.Combine(@"C:\proj\.nenv", "node.exe"), layout.NodeBinary);
-        Assert.Equal(Path.Combine(@"C:\proj\.nenv", "npm.cmd"), layout.NpmEntry);
-        Assert.Equal(Path.Combine(@"C:\proj\.nenv", "node_modules"), layout.ModulesRoot);
+        Assert.Equal(@"C:\nem\store\node\22.23.3", layout.EnvDir);
+        Assert.Equal(@"C:\nem\store\node\22.23.3", layout.BinDir);
+        Assert.Equal(Path.Combine(@"C:\nem\store\node\22.23.3", "node.exe"), layout.NodeBinary);
+        Assert.Equal(Path.Combine(@"C:\nem\store\node\22.23.3", "npm.cmd"), layout.NpmEntry);
+        Assert.Equal(Path.Combine(@"C:\nem\store\node\22.23.3", "node_modules"), layout.ModulesRoot);
     }
 
     [Fact]
     public void Unix_Layout_Uses_The_Node_Prefix_Directories()
     {
-        var layout = NodeEnvLayout.Create("/home/user/.nenv", isWindows: false);
+        var layout = NodeEnvLayout.Create("/home/user/.config/nem/store/node/22.23.3", isWindows: false);
 
         Assert.False(layout.IsWindows);
-        Assert.Equal("/home/user/.nenv", layout.EnvDir);
-        Assert.Equal(Path.Combine("/home/user/.nenv", "bin"), layout.BinDir);
-        Assert.Equal(Path.Combine("/home/user/.nenv", "bin", "node"), layout.NodeBinary);
-        Assert.Equal(Path.Combine("/home/user/.nenv", "bin", "npm"), layout.NpmEntry);
-        Assert.Equal(Path.Combine("/home/user/.nenv", "lib", "node_modules"), layout.ModulesRoot);
+        Assert.Equal("/home/user/.config/nem/store/node/22.23.3", layout.EnvDir);
+        Assert.Equal(Path.Combine("/home/user/.config/nem/store/node/22.23.3", "bin"), layout.BinDir);
+        Assert.Equal(Path.Combine("/home/user/.config/nem/store/node/22.23.3", "bin", "node"), layout.NodeBinary);
+        Assert.Equal(Path.Combine("/home/user/.config/nem/store/node/22.23.3", "bin", "npm"), layout.NpmEntry);
+        Assert.Equal(Path.Combine("/home/user/.config/nem/store/node/22.23.3", "lib", "node_modules"), layout.ModulesRoot);
     }
 
     [Fact]
@@ -66,13 +66,13 @@ public class NodeEnvLayoutTests
     public void BuildPathVariable_Never_Lists_The_Same_Directory_Twice()
     {
         // On Windows the bin dir and the env root are the same directory.
-        var windows = NodeEnvLayout.Create(@"C:\proj\.nenv", isWindows: true);
-        Assert.Equal(@"C:\proj\.nenv", windows.BuildPathVariable(null));
+        var windows = NodeEnvLayout.Create(@"C:\nem\store\node\22.23.3", isWindows: true);
+        Assert.Equal(@"C:\nem\store\node\22.23.3", windows.BuildPathVariable(null));
 
         // On Unix both the bin dir and the env root are prepended, in order.
-        var unix = NodeEnvLayout.Create("/home/user/.nenv", isWindows: false);
+        var unix = NodeEnvLayout.Create("/home/user/.config/nem/store/node/22.23.3", isWindows: false);
         Assert.Equal(
-            Path.Combine("/home/user/.nenv", "bin") + Path.PathSeparator + "/home/user/.nenv",
+            Path.Combine("/home/user/.config/nem/store/node/22.23.3", "bin") + Path.PathSeparator + "/home/user/.config/nem/store/node/22.23.3",
             unix.BuildPathVariable(null));
     }
 }

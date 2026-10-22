@@ -6,9 +6,8 @@ using System;
 namespace nem.Tests;
 
 /// <summary>
-/// The config file format: comments are readable, and the explanatory header only
-/// goes into the '.jsonc' file, never into a '.json' one that other tools parse
-/// strictly.
+/// The config file format: comments are readable, and every written file carries
+/// the explanatory header.
 /// </summary>
 public class NemConfigFileTests
 {
@@ -53,7 +52,7 @@ public class NemConfigFileTests
     [Fact]
     public void A_Serialized_Header_Does_Not_Stop_It_From_Being_Read_Back()
     {
-        string text = NemConfigFile.Serialize(SampleConfig(), withHeader: true);
+        string text = NemConfigFile.Serialize(SampleConfig());
 
         Assert.StartsWith("/*", text);
         NemConfig parsed = NemConfigFile.Parse(text);
@@ -62,24 +61,7 @@ public class NemConfigFileTests
     }
 
     [Fact]
-    public void Serializing_Without_The_Header_Yields_Plain_Json()
-    {
-        string text = NemConfigFile.Serialize(SampleConfig(), withHeader: false);
-
-        Assert.DoesNotContain("/*", text);
-        Assert.DoesNotContain("//", text);
-        Assert.StartsWith("{", text);
-    }
-
-    [Fact]
-    public void Only_The_Jsonc_Config_May_Hold_Comments()
-    {
-        Assert.True(NemConfigFile.AllowsComments(Path.Combine("p", "nem.jsonc")));
-        Assert.False(NemConfigFile.AllowsComments(Path.Combine("p", "nem.json")));
-    }
-
-    [Fact]
-    public void Writing_A_Jsonc_Config_Adds_The_Header()
+    public void Writing_A_Config_Adds_The_Header()
     {
         using var tmp = new TempDir();
         string configPath = Path.Combine(tmp.FullName, "nem.jsonc");
@@ -88,20 +70,6 @@ public class NemConfigFileTests
 
         string text = File.ReadAllText(configPath);
         Assert.Contains(NemConfigFile.Header, text);
-        Assert.Equal("22.23.2", NemConfigFile.Read(configPath).NodeVersion);
-    }
-
-    [Fact]
-    public void Writing_A_Legacy_Json_Config_Leaves_It_Comment_Free()
-    {
-        using var tmp = new TempDir();
-        string configPath = Path.Combine(tmp.FullName, "nem.json");
-
-        NemConfigFile.Write(configPath, SampleConfig());
-
-        string text = File.ReadAllText(configPath);
-        Assert.DoesNotContain("/*", text);
-        Assert.StartsWith("{", text);
         Assert.Equal("22.23.2", NemConfigFile.Read(configPath).NodeVersion);
     }
 
@@ -176,7 +144,7 @@ public class NemConfigFileTests
     {
         // Serialize stays pure so a config from an older schema can be rendered as-is.
         string text = NemConfigFile.Serialize(
-            new NemConfig { Version = NemConfigVersion.Initial, NodeVersion = "22.23.2" }, withHeader: false);
+            new NemConfig { Version = NemConfigVersion.Initial, NodeVersion = "22.23.2" });
 
         Assert.Contains($"\"Version\": {NemConfigVersion.Initial}", text);
     }
@@ -184,7 +152,7 @@ public class NemConfigFileTests
     [Fact]
     public void The_Version_Leads_The_File_So_It_Is_Visible_At_A_Glance()
     {
-        string text = NemConfigFile.Serialize(SampleConfig(), withHeader: false);
+        string text = NemConfigFile.Serialize(SampleConfig());
 
         Assert.True(text.IndexOf("\"Version\"", StringComparison.Ordinal)
                   < text.IndexOf("\"NodeVersion\"", StringComparison.Ordinal));
