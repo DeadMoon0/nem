@@ -40,7 +40,7 @@ public class ProxyTemplateTests
         string stale = Path.Combine(tmp.FullName, "ng.bat");
         File.WriteAllText(stale, "@echo off\r\nnem run %~n0 -- %*\r\n");
 
-        ProxyService.RefreshProxies(TemplatesDir, tmp.FullName);
+        ProxyService.RefreshProxies(TemplatesDir, tmp.FullName, runningTool: null);
 
         Assert.Equal(File.ReadAllText(Path.Combine(TemplatesDir, "NAME.bat")), File.ReadAllText(stale));
     }
@@ -52,7 +52,7 @@ public class ProxyTemplateTests
         string notes = Path.Combine(tmp.FullName, "notes.txt");
         File.WriteAllText(notes, "mine");
 
-        ProxyService.RefreshProxies(TemplatesDir, tmp.FullName);
+        ProxyService.RefreshProxies(TemplatesDir, tmp.FullName, runningTool: null);
 
         Assert.Equal("mine", File.ReadAllText(notes));
     }

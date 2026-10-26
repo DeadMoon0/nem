@@ -46,8 +46,18 @@ public sealed class EnvStore
         GlobalsDir = globalsDir;
     }
 
-    /// <summary>The store in the user's nem folder.</summary>
-    public static EnvStore Default => new(IOPathManager.System.StoreDirPath, IOPathManager.System.GlobalsDirPath);
+    /// <summary>The layout this nem reads and writes; see <see cref="StoreMigrator"/>.</summary>
+    public const int FormatVersion = 1;
+
+    static readonly Lazy<EnvStore> _default = new(() =>
+        StoreMigrator.Open(new EnvStore(IOPathManager.System.StoreDirPath, IOPathManager.System.GlobalsDirPath)));
+
+    /// <summary>
+    /// The store in the user's nem folder, migrated to <see cref="FormatVersion"/>
+    /// the first time a command uses it.
+    /// </summary>
+    /// <exception cref="UnsupportedStoreVersionException">The store was written by a newer nem.</exception>
+    public static EnvStore Default => _default.Value;
 
     public string StoreDir { get; }
     public string GlobalsDir { get; }
@@ -56,6 +66,9 @@ public sealed class EnvStore
     string ToolsRoot => Path.Combine(StoreDir, "tools");
     string TempRoot => Path.Combine(StoreDir, ".tmp");
     string LocksRoot => Path.Combine(StoreDir, ".locks");
+
+    /// <summary>True once the store holds any entry, finished or not.</summary>
+    public bool HoldsEntries => Directory.Exists(NodeRoot) || Directory.Exists(ToolsRoot);
 
     public string NodeEntryDir(string version) => Path.Combine(NodeRoot, version);
 

@@ -36,7 +36,20 @@ internal class ResolveCommand : Command<ResolveCommandSettings>
         Console.SetOut(Console.Error);
         AnsiConsole.Console = StdErr.Console;
 
-        ToolLaunch? launch = ProxyService.PrepareLaunch(settings.ToolName, Directory.GetCurrentDirectory(), EnvStore.Default, out int exitCode);
+        ToolLaunch? launch;
+        int exitCode;
+        try
+        {
+            launch = ProxyService.PrepareLaunch(settings.ToolName, Directory.GetCurrentDirectory(), EnvStore.Default, out exitCode);
+        }
+        catch (Exception e)
+        {
+            // Left to the parser's handler, a failure would be printed to stdout and
+            // the proxy would try to run it.
+            StdErr.Console.MarkupLine($"[red]{Markup.Escape(e.Message)}[/]");
+            launch = null;
+            exitCode = 1;
+        }
         answer.Write(launch == null
             ? ResolveOutput.FormatFailure(settings.Shell, exitCode)
             : ResolveOutput.Format(settings.Shell, launch));

@@ -12,7 +12,7 @@ namespace nem.Services;
 public static class ProxyService
 {
     /// <summary>The proxy script templates nem ships, next to its own assembly.</summary>
-    static string ShippedTemplatesDir =>
+    internal static string ShippedTemplatesDir =>
         Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, "ProxyFiles");
 
     /// <summary>
@@ -69,18 +69,17 @@ public static class ProxyService
     }
 
     /// <summary>
-    /// Rewrites every proxy in the proxy directory that differs from the template
-    /// this nem ships, so proxies an older nem wrote start tools the current way.
-    /// The templates are generic (they take the tool name from their own file
-    /// name), so one comparison per file is enough.
+    /// Rewrites every proxy in <paramref name="targetDir"/> that differs from its
+    /// template, so proxies an older nem wrote start tools the current way. The
+    /// templates are generic (they take the tool name from their own file name), so
+    /// one comparison per file is enough. The proxies of <paramref name="runningTool"/>
+    /// are left alone: cmd and sh read a script while it runs, and a rewrite would
+    /// make them continue mid-line in the new text. Returns true when no stale
+    /// proxy is left.
     /// </summary>
-    public static void RefreshProxies() => RefreshProxies(ShippedTemplatesDir, IOPathManager.System.ProxyDirPath);
-
-    internal static void RefreshProxies(string proxyFilesDir, string targetDir)
+    internal static bool RefreshProxies(string proxyFilesDir, string targetDir, string? runningTool)
     {
-        if (!Directory.Exists(targetDir))
-            return;
-
+        bool complete = true;
         foreach (string proxy in Directory.EnumerateFiles(targetDir))
         {
             string? template = Path.GetExtension(proxy).ToLowerInvariant() switch
@@ -96,14 +95,21 @@ public static class ProxyService
 
             try
             {
-                if (!File.ReadAllBytes(proxy).AsSpan().SequenceEqual(File.ReadAllBytes(templatePath)))
-                    TryCopyTemplate(template!, proxy, proxyFilesDir, targetDir);
+                if (File.ReadAllBytes(proxy).AsSpan().SequenceEqual(File.ReadAllBytes(templatePath)))
+                    continue;
+
+                if (string.Equals(Path.GetFileNameWithoutExtension(proxy), runningTool, StringComparison.OrdinalIgnoreCase))
+                    complete = false;
+                else
+                    complete &= TryCopyTemplate(template!, proxy, proxyFilesDir, targetDir);
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
-                // A proxy that is being run right now is refreshed next time.
+                // Refreshed by a later call.
+                complete = false;
             }
         }
+        return complete;
     }
 
     /// <summary>

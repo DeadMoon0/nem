@@ -51,7 +51,6 @@ public static class EnvironmentInstaller
         // their proxies up to date.
         ProxyService.TryInstallTool("npm");
         ProxyService.TryInstallTool("npx");
-        ProxyService.RefreshProxies();
 
         // Proxies of tools this env does not have are deliberately left alone. The
         // proxy directory is machine-wide, so deleting "stale" ones here would

@@ -1,8 +1,8 @@
 using nem.Commands;
 using nem.Commands.Store;
 using nem.Commands.Tool;
+using nem.Services;
 using Spectre.Console.Cli;
-using System.Reflection;
 
 namespace nem;
 
@@ -11,15 +11,12 @@ internal class Program
     static int Main(string[] args)
     {
         CommandLine commandLine = CommandLine.Split(args);
+        ProxyMigrator.Run(commandLine.NemArguments);
         var app = new CommandApp();
 
         app.Configure(config =>
         {
-            var version = typeof(Program).Assembly
-                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
-                .InformationalVersion ?? "unknown";
-
-            config.SetApplicationVersion(version);
+            config.SetApplicationVersion(ProxyMigrator.CurrentVersion);
             config.SetApplicationName("nem");
 
             config.AddCommand<AuditCommand>("audit")

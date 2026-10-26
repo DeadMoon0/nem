@@ -44,8 +44,12 @@ dotnet tool update -g nem
 
 This works at any time, also while tools started through nem are running (a dev
 server, an MCP server through `npx`): the proxies start tools themselves, so nem only
-runs for the moment it takes to find the tool. Proxies an older nem wrote are
-brought up to date by the next `nem install`, `nem tool add` or `nem setup`.
+runs for the moment it takes to find the tool.
+
+There is nothing to do after an update: the first nem call - typing any proxied
+tool is one - notices that the proxies were written by another nem version
+(`proxy/.nem-version`) and brings them up to date. The proxy that is running at that
+moment is left for the next call, since cmd and sh read a script while it runs.
 
 ## Usage
 
@@ -178,6 +182,10 @@ $ nem store list                  # every entry and when it was last used
 $ nem store prune                 # remove entries unused for 180 days
 $ nem store prune --older-than 30 # ... or for 30 days
 ```
+
+The store records its layout version (`store/.nem-store-version`). A nem with a newer
+layout migrates an older store on first use; a nem that finds a store from a newer
+version refuses it and asks you to update instead of misreading it.
 
 ### Security audit
 
