@@ -10,6 +10,7 @@ internal class Program
 {
     static int Main(string[] args)
     {
+        CommandLine commandLine = CommandLine.Split(args);
         var app = new CommandApp();
 
         app.Configure(config =>
@@ -35,7 +36,8 @@ internal class Program
                 .IsHidden();
 
             config.AddCommand<RunCommand>("run")
-                .WithDescription("Runs a tool from the nem env (or the system fallback). Tool arguments follow the tool name.");
+                .WithDescription("Runs a tool from the nem env (or the system fallback). Tool arguments follow the tool name.")
+                .WithData(commandLine.ToolArguments);
 
             config.AddCommand<SetupCommand>("setup")
                 .WithDescription("Adds the nem proxy directory to your PATH. Only needs to be run once; '--uninstall' takes it back out.");
@@ -67,6 +69,6 @@ internal class Program
             });
         });
 
-        return app.Run(args);
+        return app.Run(commandLine.NemArguments);
     }
 }
