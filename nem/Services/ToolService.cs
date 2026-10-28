@@ -76,6 +76,7 @@ public static class ToolService
         // which then installs the tool on first use. Before, the name went to
         // whatever else was on the PATH until someone ran 'nem install'.
         var proxied = resolved.Bins.Where(ProxyService.TryInstallTool).ToList();
+        PackageRedirection.WarnIfRedirected("tool add");
         if (proxied.Count > 0)
             AnsiConsole.MarkupLine($"Commands: [green]{Markup.Escape(string.Join(", ", proxied))}[/] - the first use installs it, or run [green]nem install[/] now.");
         else

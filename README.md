@@ -51,6 +51,16 @@ tool is one - notices that the proxies were written by another nem version
 (`proxy/.nem-version`) and brings them up to date. The proxy that is running at that
 moment is left for the next call, since cmd and sh read a script while it runs.
 
+### Running nem from a packaged app (Windows)
+
+Apps installed as MSIX packages - the Claude desktop app is one - get a private view of
+`%APPDATA%`: everything they and their child processes write there lands in
+`%LOCALAPPDATA%\Packages\<app>\LocalCache\Roaming` instead. A `nem install`, `nem tool add`
+or `nem setup` started from such an app fills a store and proxies that only that app sees;
+your other terminals keep the old state. nem notices this (it writes a probe and looks
+where it landed), warns, and `nem report` names it. Run those commands from a normal
+terminal instead; running tools from inside the app works either way.
+
 ## Usage
 
 ### Initialize a project

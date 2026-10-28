@@ -30,6 +30,11 @@ internal class SetupCommand : AsyncCommand<SetupCommandSettings>
     {
         await Task.CompletedTask;
 
+        // The PATH entry 'nem setup' writes points at the real proxy folder; proxies
+        // written from inside a packaged app never get there.
+        if (!settings.Uninstall)
+            PackageRedirection.WarnIfRedirected("setup");
+
         if (!OperatingSystem.IsWindows())
             return settings.Uninstall ? RemoveUnixShellPath() : SetupUnixShellPath();
 

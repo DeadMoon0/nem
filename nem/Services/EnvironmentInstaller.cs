@@ -77,6 +77,7 @@ public static class EnvironmentInstaller
             EnvStore.Touch(entryDir, now);
 
         PruneStore(store, now, PruneAfter, quiet: true);
+        PackageRedirection.WarnIfRedirected("install");
         return exit;
     }
 

@@ -41,7 +41,7 @@ public static class DiagnosticReport
     public static IReadOnlyList<ReportFile> Collect(ReportInputs inputs)
     {
         var findings = new List<string>();
-        JToken system = Section(() => System(inputs));
+        JToken system = Section(() => System(inputs, findings));
         JToken proxies = Section(() => Proxies(inputs, findings));
         JToken store = Section(() => StoreSnapshot(inputs, findings));
         JToken env = Section(() => Env(inputs, findings));
@@ -91,24 +91,36 @@ public static class DiagnosticReport
 
     // ---------- sections ----------
 
-    static JToken System(ReportInputs inputs) => new JObject
+    static JToken System(ReportInputs inputs, List<string> findings)
     {
-        ["nemVersion"] = ProxyMigrator.CurrentVersion,
-        ["os"] = RuntimeInformation.OSDescription,
-        ["architecture"] = RuntimeInformation.ProcessArchitecture.ToString(),
-        ["dotnet"] = RuntimeInformation.FrameworkDescription,
-        ["machine"] = Environment.MachineName,
-        ["user"] = Environment.UserName,
-        ["taken"] = inputs.Now.ToString("o"),
-        ["cwd"] = inputs.Cwd,
-        ["processPath"] = new JArray(PathPrecedence.ProcessPathDirs()),
-        ["storedPath"] = new JArray(PathPrecedence.StoredPathDirs()),
-        ["variables"] = new JObject(Environment.GetEnvironmentVariables().Cast<DictionaryEntry>()
-            .Select(v => (Name: v.Key.ToString()!, Value: v.Value?.ToString() ?? ""))
-            .Where(v => VariablePrefixes.Any(p => v.Name.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
-            .OrderBy(v => v.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(v => new JProperty(v.Name, v.Value))),
-    };
+        PackageRedirection? redirection = PackageRedirection.Detect();
+        if (redirection != null)
+            findings.Add(redirection.Warning);
+
+        return new JObject
+        {
+            ["packageRedirection"] = redirection == null ? null : new JObject
+            {
+                ["package"] = redirection.Package,
+                ["redirectedNemDir"] = redirection.RedirectedNemDir,
+            },
+            ["nemVersion"] = ProxyMigrator.CurrentVersion,
+            ["os"] = RuntimeInformation.OSDescription,
+            ["architecture"] = RuntimeInformation.ProcessArchitecture.ToString(),
+            ["dotnet"] = RuntimeInformation.FrameworkDescription,
+            ["machine"] = Environment.MachineName,
+            ["user"] = Environment.UserName,
+            ["taken"] = inputs.Now.ToString("o"),
+            ["cwd"] = inputs.Cwd,
+            ["processPath"] = new JArray(PathPrecedence.ProcessPathDirs()),
+            ["storedPath"] = new JArray(PathPrecedence.StoredPathDirs()),
+            ["variables"] = new JObject(Environment.GetEnvironmentVariables().Cast<DictionaryEntry>()
+                .Select(v => (Name: v.Key.ToString()!, Value: v.Value?.ToString() ?? ""))
+                .Where(v => VariablePrefixes.Any(p => v.Name.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
+                .OrderBy(v => v.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(v => new JProperty(v.Name, v.Value))),
+        };
+    }
 
     static JToken Proxies(ReportInputs inputs, List<string> findings)
     {
