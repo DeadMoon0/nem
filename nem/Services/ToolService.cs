@@ -314,6 +314,7 @@ public static class ToolService
             result = 1;
         }
 
+        Diagnostics.NemLog.Info("store.tool", new { tool = $"{tool.Name}@{tool.Version}", entry = tool.Dir, npmExitCode = result });
         if (result != 0)
         {
             store.TryDelete(tool.Dir);

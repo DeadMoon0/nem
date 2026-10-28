@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using nem.Common;
 using nem.Common.Models;
+using nem.Services.Diagnostics;
 using Spectre.Console;
 
 namespace nem.Services;
@@ -95,6 +96,7 @@ public static class AutoInstaller
                 composition = composed.Env;
                 break;
             case EnvState.Invalid invalid:
+                NemLog.Info("env.invalid", new { env = env.DirPath, invalid.Reason });
                 StdErr.Console.MarkupLine($"[red]Cannot run '{Markup.Escape(toolName)}' in {Markup.Escape(env.DirPath)}: {Markup.Escape(invalid.Reason)}.[/]");
                 exitCode = 1;
                 return false;
@@ -104,6 +106,7 @@ public static class AutoInstaller
 
         if (!composition.IsInstalled)
         {
+            NemLog.Info("autoinstall", new { env = env.DirPath, tool = toolName, missing = composition.Missing });
             if (IsOptedOut(Environment.GetEnvironmentVariable(OptOutVariable)))
             {
                 StdErr.Console.MarkupLine($"[yellow]Not in the store: {Markup.Escape(string.Join(", ", composition.Missing))}; run [green]nem install[/] (auto-install is off: {OptOutVariable}).[/]");
@@ -112,6 +115,7 @@ public static class AutoInstaller
 
             StdErr.Console.MarkupLine($"[gray]Not in the store yet: {Markup.Escape(string.Join(", ", composition.Missing))} - installing before '{Markup.Escape(toolName)}' runs...[/]");
             exitCode = RunInstall(env);
+            NemLog.Info("autoinstall.done", new { exitCode });
             if (exitCode != 0)
             {
                 StdErr.Console.MarkupLine($"[red]The install failed, so '{Markup.Escape(toolName)}' was not started. Fix the error above, or run [green]nem install[/].[/]");
@@ -154,6 +158,7 @@ public static class AutoInstaller
         }
         catch (Exception e)
         {
+            NemLog.Error(e, "autoinstall");
             StdErr.Console.MarkupLine($"[red]Could not start 'nem install': {Markup.Escape(e.Message)}[/]");
             return 1;
         }

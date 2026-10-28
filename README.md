@@ -310,6 +310,35 @@ $ git commit -m "Lock node 18.12.0, ng 15.2.11"
 $ npm ci
 ```
 
+### Reporting a problem
+```bash
+$ nem report [path] [--tool ng] [--days 14] [--output <folder>]
+# Writes nem-report-<machine>-<time>.zip into the current folder
+```
+
+When nem misbehaves on a colleague's machine - or did yesterday and "fixed itself" -
+they run `nem report` in the folder where it happened and send you the zip. It holds:
+
+| File | Contents |
+| --- | --- |
+| `report.md` | a summary: what looks wrong (stale proxies, a shadowed name, what the store lacks, unfinished installs), what each name runs here, the errors of the last 24 hours |
+| `system.json` | OS, .NET, nem version, this terminal's and the stored PATH, the `NEM_*`, `NODE_*` and `npm_config_*` variables |
+| `proxies.json` | every proxy, whether it matches this nem's template, which PATH entry wins for each name |
+| `store.json` | every store entry, whether it is complete, when it was last used |
+| `env.json` | the folder's env: its config, store entries, npm registry and prefix, the `nem which` chain for every name (`--tool ng` adds the exact environment `ng` starts with) |
+| `logs/` | nem's log of the last days |
+
+The report only looks: it does not install, migrate or refresh anything. Secrets - npm
+auth tokens, passwords, credentials in URLs - are replaced by `***`; paths and user
+names stay, since they are often what a problem is about. Everything is plain text.
+
+**The log** behind it is always on: every nem call appends what it decided as JSON lines
+to `logs/nem-<day>.jsonl` in the nem folder (the env and store entries it used, the tool
+`nem resolve` picked, auto-installs, migrations, errors with their stack trace). Two
+weeks are kept. `NEM_LOG=debug` adds the full environment each tool starts with,
+`NEM_LOG=off` turns it off. The log ends where nem does: the proxy starts the tool after
+nem has exited, so the tool's own output and exit code are not in it.
+
 ---
 
 ## How It Works
@@ -414,6 +443,7 @@ The system directory is `%APPDATA%\nem\` on Windows and `~/.config/nem/` on Unix
 | `...\store\` | Node versions and tools of every env (see [The store](#the-store)) |
 | `...\globals\` | `npm install -g` inside an env, one folder per Node major |
 | `...\proxy\` | Global tool proxies (on your PATH) |
+| `...\logs\` | nem's log, one file per day, two weeks kept (see [Reporting a problem](#reporting-a-problem)) |
 
 Set `NEM_HOME` to an absolute path to use that folder instead, e.g. to keep a test run
 apart from your real store.

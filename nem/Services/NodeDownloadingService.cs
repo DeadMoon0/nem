@@ -69,6 +69,7 @@ public static class NodeDownloadingService
                 throw new IOException($"Could not move Node {version} into {entryDir}.");
             EnsureUnixExecutableBits(entryDir);
             EnvStore.MarkComplete(entryDir, DateTime.UtcNow);
+            Diagnostics.NemLog.Info("store.node", new { version, entry = entryDir });
             AnsiConsole.MarkupLine($"[green]Node {version} is in the store.[/]");
         }
         finally

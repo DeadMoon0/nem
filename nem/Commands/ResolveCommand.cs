@@ -1,4 +1,5 @@
 using nem.Services;
+using nem.Services.Diagnostics;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using System;
@@ -44,6 +45,7 @@ internal class ResolveCommand : Command<ResolveCommandSettings>
         }
         catch (Exception e)
         {
+            NemLog.Error(e, "resolve");
             // Left to the parser's handler, a failure would be printed to stdout and
             // the proxy would try to run it.
             StdErr.Console.MarkupLine($"[red]{Markup.Escape(e.Message)}[/]");

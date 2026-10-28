@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using nem.Services.Diagnostics;
 
 namespace nem.Services;
 
@@ -47,6 +48,8 @@ public static class StoreMigrator
         if (version > currentVersion)
             throw new UnsupportedStoreVersionException(version, currentVersion, store.StoreDir);
 
+        if (version != currentVersion)
+            NemLog.Info("store.migrating", new { store = store.StoreDir, from = version, to = currentVersion });
         while (version < currentVersion)
         {
             StoreMigration step = steps.SingleOrDefault(s => s.From == version)

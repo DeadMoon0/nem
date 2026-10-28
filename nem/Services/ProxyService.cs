@@ -1,4 +1,5 @@
 using nem.Common;
+using nem.Services.Diagnostics;
 using Spectre.Console;
 using System;
 using System.Collections.Generic;
@@ -137,6 +138,14 @@ public static class ProxyService
             return null;
 
         ToolResolver.ToolResolution resolution = ToolResolver.Resolve(cwd, tool, store);
+        NemLog.Info("tool.resolved", new
+        {
+            tool,
+            source = resolution.Source.ToString(),
+            executable = resolution.ExecutablePath,
+            node = resolution.Env?.NodeVersion,
+            decidedBy = resolution.Chain.LastOrDefault(step => step.Decided)?.Finding,
+        });
         if (resolution.ExecutablePath == null)
         {
             if (resolution.Env == null)
@@ -153,9 +162,11 @@ public static class ProxyService
         }
 
         exitCode = 0;
-        return new ToolLaunch(
+        var launch = new ToolLaunch(
             resolution.ExecutablePath,
             resolution.Env == null ? [] : ToolLaunch.EnvironmentFor(resolution.Env, Environment.GetEnvironmentVariable("PATH")));
+        NemLog.Debug("tool.environment", new { variables = launch.Environment.ToDictionary(v => v.Key, v => v.Value) });
+        return launch;
     }
 
     /// <summary>Starts the tool with nem's own stdin, stdout and stderr, and waits for it.</summary>

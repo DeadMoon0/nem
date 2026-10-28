@@ -78,9 +78,10 @@ public class ProxyMigrationTests
     }
 
     [Fact]
-    public void Uninstalling_does_not_refresh_the_proxies_it_is_about_to_delete()
+    public void Uninstalling_and_reporting_leave_the_proxies_as_they_are()
     {
         Assert.False(ProxyMigrator.AppliesTo(["setup", "--uninstall"]));
+        Assert.False(ProxyMigrator.AppliesTo(["report"]));
         Assert.True(ProxyMigrator.AppliesTo(["setup"]));
         Assert.True(ProxyMigrator.AppliesTo([]));
     }

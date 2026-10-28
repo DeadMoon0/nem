@@ -44,7 +44,8 @@ public static class ToolResolver
         EnvComposition? Env,
         string? LocalPackageDir,
         string? LocalVersion,
-        IReadOnlyList<ResolutionStep> Chain);
+        IReadOnlyList<ResolutionStep> Chain,
+        bool TypedNameReachesNem);
 
     /// <summary>
     /// Walks the precedence chain for <paramref name="toolName"/> as it applies in
@@ -61,7 +62,8 @@ public static class ToolResolver
         // 1. Does the typed name reach nem at all? A missing or shadowed proxy means
         //    the shell hands the name to something else and nem never runs - but
         //    'nem run <tool>' still arrives here, so this is reported, not decisive.
-        chain.Add(DescribeProxyReach(toolName));
+        (ResolutionStep reach, bool reachesNem) = DescribeProxyReach(toolName);
+        chain.Add(reach);
 
         // 2. Is there an env above the cwd?
         if (!IOPathManager.TryFindEnv(cwd, out IOPathManager.IOPathManagerEnv? env))
@@ -73,7 +75,7 @@ public static class ToolResolver
             return new ToolResolution(
                 toolName,
                 system == null ? ToolSource.Unavailable : ToolSource.Global,
-                system, null, null, null, chain);
+                system, null, null, null, chain, reachesNem);
         }
 
         chain.Add(new ResolutionStep("env", env.DirPath));
@@ -84,7 +86,7 @@ public static class ToolResolver
         if (state is not AutoInstaller.EnvState.Composed { Env: var composition })
         {
             chain.Add(new ResolutionStep("env state", AutoInstaller.Describe(state, optedOut), Decided: true));
-            return new ToolResolution(toolName, ToolSource.Unavailable, null, null, null, null, chain);
+            return new ToolResolution(toolName, ToolSource.Unavailable, null, null, null, null, chain, reachesNem);
         }
         chain.Add(new ResolutionStep("env state", AutoInstaller.Describe(state, optedOut)));
 
@@ -93,7 +95,7 @@ public static class ToolResolver
         if (envTool == null)
         {
             chain.Add(new ResolutionStep("env copy", composition.IsInstalled ? "not installed in this env" : "not in the store yet", Decided: true));
-            return new ToolResolution(toolName, ToolSource.Unavailable, null, composition, null, null, chain);
+            return new ToolResolution(toolName, ToolSource.Unavailable, null, composition, null, null, chain, reachesNem);
         }
 
         chain.Add(new ResolutionStep("env copy", envTool));
@@ -109,30 +111,30 @@ public static class ToolResolver
         if (localDir != null)
         {
             chain.Add(new ResolutionStep("project copy", localVersion == null ? localDir : $"{localVersion} in {localDir}", Decided: true));
-            return new ToolResolution(toolName, ToolSource.Local, envTool, composition, localDir, localVersion, chain);
+            return new ToolResolution(toolName, ToolSource.Local, envTool, composition, localDir, localVersion, chain, reachesNem);
         }
 
         chain.Add(new ResolutionStep("project copy", "none above this folder", Decided: true));
-        return new ToolResolution(toolName, ToolSource.Env, envTool, composition, null, null, chain);
+        return new ToolResolution(toolName, ToolSource.Env, envTool, composition, null, null, chain, reachesNem);
     }
 
     /// <summary>
     /// Whether a typed name reaches the nem proxy, and what answers instead when it
     /// does not. Informational: it describes the shell's behaviour, not nem's.
     /// </summary>
-    static ResolutionStep DescribeProxyReach(string toolName)
+    static (ResolutionStep Step, bool ReachesNem) DescribeProxyReach(string toolName)
     {
         if (!IOService.ProxyDirIsOnProcessPath())
-            return new ResolutionStep("typed name", "the proxy directory is not on this terminal's PATH");
+            return (new ResolutionStep("typed name", "the proxy directory is not on this terminal's PATH"), false);
 
         var shadows = PathPrecedence.FindShadowsOnProcessPath([toolName]);
         if (shadows.Count == 0)
-            return new ResolutionStep("typed name", Path.Combine(IOPathManager.System.ProxyDirPath, toolName));
+            return (new ResolutionStep("typed name", Path.Combine(IOPathManager.System.ProxyDirPath, toolName)), true);
 
         PathPrecedence.Shadow shadow = shadows[0];
-        return new ResolutionStep("typed name", shadow.Reason == PathPrecedence.Unreachable.NoProxy
+        return (new ResolutionStep("typed name", shadow.Reason == PathPrecedence.Unreachable.NoProxy
             ? "no proxy - the name runs whatever else is on the PATH"
-            : $"answered by {shadow.ShadowingDir} before the nem proxy");
+            : $"answered by {shadow.ShadowingDir} before the nem proxy"), false);
     }
 
     /// <summary>

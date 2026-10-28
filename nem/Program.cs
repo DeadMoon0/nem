@@ -2,7 +2,10 @@ using nem.Commands;
 using nem.Commands.Store;
 using nem.Commands.Tool;
 using nem.Services;
+using nem.Services.Diagnostics;
+using Spectre.Console;
 using Spectre.Console.Cli;
+using System.Diagnostics;
 
 namespace nem;
 
@@ -10,6 +13,8 @@ internal class Program
 {
     static int Main(string[] args)
     {
+        var duration = Stopwatch.StartNew();
+        NemLog.Start(args);
         CommandLine commandLine = CommandLine.Split(args);
         ProxyMigrator.Run(commandLine.NemArguments);
         var app = new CommandApp();
@@ -19,6 +24,17 @@ internal class Program
             config.SetApplicationVersion(ProxyMigrator.CurrentVersion);
             config.SetApplicationName("nem");
 
+            // Every failure ends up in the log with its stack trace; the user gets the message.
+            config.SetExceptionHandler((exception, _) =>
+            {
+                NemLog.Error(exception, "command");
+                if (exception is CommandAppException { Pretty: { } pretty })
+                    AnsiConsole.Write(pretty);
+                else
+                    AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(exception.Message)}");
+                return -1;
+            });
+
             config.AddCommand<AuditCommand>("audit")
                 .WithDescription("Lists the known vulnerabilities in the env's installed tools. 'nem install' only prints the count.");
 
@@ -27,6 +43,9 @@ internal class Program
 
             config.AddCommand<InstallCommand>("install")
                 .WithDescription("Puts the env's Node version and tools into the store and creates their proxies. Tools also do this on first use.");
+
+            config.AddCommand<ReportCommand>("report")
+                .WithDescription("Writes a zip with nem's log and a snapshot of proxies, store and env - to send along with a problem.");
 
             config.AddCommand<ResolveCommand>("resolve")
                 .WithDescription("Used by the proxies: installs what the env lacks, then prints the tool to start and its environment, for a shell to run.")
@@ -66,6 +85,8 @@ internal class Program
             });
         });
 
-        return app.Run(commandLine.NemArguments);
+        int exitCode = app.Run(commandLine.NemArguments);
+        NemLog.Info("end", new { exitCode, ms = duration.ElapsedMilliseconds });
+        return exitCode;
     }
 }

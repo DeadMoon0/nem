@@ -1,5 +1,6 @@
 using nem.Common;
 using nem.Common.Models;
+using nem.Services.Diagnostics;
 using Spectre.Console;
 using System;
 using System.Collections.Generic;
@@ -41,11 +42,14 @@ public static class EnvironmentInstaller
         }
         catch (Exception ex)
         {
+            NemLog.Error(ex, "install.node");
             AnsiConsole.MarkupLine($"[red]Installing the Node version failed: {Markup.Escape(ex.Message)}[/]");
             return 1;
         }
 
+        NemLog.Info("install", new { env = env.DirPath, node = composition.NodeVersion, tools = composition.Tools.Select(t => $"{t.Name}@{t.Version}"), missing = composition.Missing, reinstall });
         int exit = ToolService.InstallTools(composition, store, reinstall);
+        NemLog.Info("install.done", new { exitCode = exit });
 
         // npm/npx are part of every Node distribution, not declared tools; keep
         // their proxies up to date.
@@ -118,6 +122,8 @@ public static class EnvironmentInstaller
     public static void PruneStore(EnvStore store, DateTime now, TimeSpan maxAge, bool quiet)
     {
         EnvStore.PruneResult result = store.Prune(now, maxAge);
+        if (result.Removed.Count > 0 || result.Busy.Count > 0)
+            NemLog.Info("store.pruned", new { removed = result.Removed.Select(e => e.Name), busy = result.Busy.Select(e => e.Name) });
         foreach (EnvStore.Entry entry in result.Removed)
             AnsiConsole.MarkupLine($"[gray]Removed {entry.Kind} {Markup.Escape(entry.Name)} from the store (last used {entry.LastUsed.ToLocalTime():yyyy-MM-dd}).[/]");
         foreach (EnvStore.Entry entry in result.Busy)

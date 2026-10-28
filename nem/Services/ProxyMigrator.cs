@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using nem.Common;
+using nem.Services.Diagnostics;
 
 namespace nem.Services;
 
@@ -39,9 +40,13 @@ public static class ProxyMigrator
         }
     }
 
-    /// <summary>Every command but 'nem setup --uninstall', which is about to delete the proxies.</summary>
+    /// <summary>
+    /// Every command but 'nem setup --uninstall', which is about to delete the
+    /// proxies, and 'nem report', which has to show them as they were.
+    /// </summary>
     internal static bool AppliesTo(IReadOnlyList<string> nemArguments) =>
-        !(nemArguments.Count > 0 && nemArguments[0] == "setup" && nemArguments.Contains("--uninstall"));
+        nemArguments.Count == 0
+        || !(nemArguments[0] == "report" || (nemArguments[0] == "setup" && nemArguments.Contains("--uninstall")));
 
     /// <summary>
     /// The tool whose proxy started this nem: 'nem resolve' and 'nem run' are what
@@ -56,7 +61,8 @@ public static class ProxyMigrator
             return;
 
         string marker = Path.Combine(proxyDir, MarkerFileName);
-        if (File.Exists(marker) && File.ReadAllText(marker) == version)
+        string? markedVersion = File.Exists(marker) ? File.ReadAllText(marker) : null;
+        if (markedVersion == version)
             return;
 
         // Another nem is refreshing right now; it does the same work.
@@ -66,7 +72,9 @@ public static class ProxyMigrator
 
         // The marker only moves on once nothing is left over - the running tool's
         // proxy included, which the next call for another tool refreshes.
-        if (ProxyService.RefreshProxies(proxyFilesDir, proxyDir, runningTool))
+        bool complete = ProxyService.RefreshProxies(proxyFilesDir, proxyDir, runningTool);
+        if (complete)
             File.WriteAllText(marker, version);
+        NemLog.Info("proxies.refreshed", new { from = markedVersion, to = version, complete, skipped = complete ? null : runningTool });
     }
 }
