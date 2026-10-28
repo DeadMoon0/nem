@@ -162,6 +162,12 @@ public static class ProxyService
         }
 
         exitCode = 0;
+        // npm checks that its prefix exists before 'npm exec'/'npx' does anything,
+        // and nothing else creates the globals folder of a Node major until the
+        // first 'npm install -g' there.
+        if (resolution.Env != null)
+            Directory.CreateDirectory(resolution.Env.GlobalsDir);
+
         var launch = new ToolLaunch(
             resolution.ExecutablePath,
             resolution.Env == null ? [] : ToolLaunch.EnvironmentFor(resolution.Env, Environment.GetEnvironmentVariable("PATH")));

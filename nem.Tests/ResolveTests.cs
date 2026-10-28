@@ -66,6 +66,8 @@ public class ResolveTests
         Assert.StartsWith(binDir, variables["PATH"]);
         Assert.Equal(store.GlobalsDirFor(22), variables["npm_config_prefix"]);
         Assert.Contains(NodeEnvLayout.Create(toolEntry).ModulesRoot, variables["NODE_PATH"]);
+        // npm refuses to run 'npx' while its prefix does not exist.
+        Assert.True(Directory.Exists(variables["npm_config_prefix"]));
     }
 
     [Fact]
